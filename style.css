@@ -17,6 +17,17 @@
     gap: 8px;
 }
 
+#npc-pov-memory-settings .npc-pov-memory-character-picker label {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    align-items: center;
+    gap: 8px;
+}
+
+#npc-pov-memory-settings .npc-pov-memory-character-picker select {
+    width: 100%;
+}
+
 #npc-pov-memory-settings .npc-pov-memory-current {
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 6px;

@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS = {
 };
 
 let lastDraftCharacterId = null;
+let selectedSettingsCharacterId = null;
 let isUpdating = false;
 
 function clone(value) {
@@ -142,6 +143,27 @@ function getCharacterById(characterId, context = getContext()) {
     return context.characters?.[id] || null;
 }
 
+function getGroupMemberCharacterIds(context = getContext()) {
+    if (!context.groupId) {
+        return [];
+    }
+
+    const group = context.groups?.find(item => item.id === context.groupId);
+    if (!group || !Array.isArray(group.members)) {
+        return [];
+    }
+
+    const ids = [];
+    for (const avatar of group.members) {
+        const id = context.characters?.findIndex(character => character?.avatar === avatar);
+        if (Number.isInteger(id) && id >= 0 && !ids.includes(id)) {
+            ids.push(id);
+        }
+    }
+
+    return ids;
+}
+
 function getActiveCharacterId(context = getContext()) {
     if (lastDraftCharacterId !== null && getCharacterById(lastDraftCharacterId, context)) {
         return lastDraftCharacterId;
@@ -158,6 +180,27 @@ function getActiveCharacterId(context = getContext()) {
         .find(message => message && !message.is_user && !message.is_system);
 
     return findCharacterIdForMessage(lastNpcMessage, context);
+}
+
+function getSettingsCharacterId(context = getContext()) {
+    const groupMemberIds = getGroupMemberCharacterIds(context);
+
+    if (groupMemberIds.length) {
+        if (groupMemberIds.includes(selectedSettingsCharacterId)) {
+            return selectedSettingsCharacterId;
+        }
+
+        if (groupMemberIds.includes(lastDraftCharacterId)) {
+            return lastDraftCharacterId;
+        }
+
+        selectedSettingsCharacterId = groupMemberIds[0];
+        return selectedSettingsCharacterId;
+    }
+
+    const activeId = getActiveCharacterId(context);
+    selectedSettingsCharacterId = activeId;
+    return activeId;
 }
 
 function findCharacterIdForMessage(message, context = getContext()) {
@@ -469,9 +512,13 @@ function setInjectedMemory(characterId = getActiveCharacterId()) {
     );
 }
 
+function clearInjectedMemory() {
+    getContext().setExtensionPrompt?.(PROMPT_KEY, "");
+}
+
 function forgetRelationshipForCurrent() {
     const context = getContext();
-    const characterId = getActiveCharacterId(context);
+    const characterId = getSettingsCharacterId(context);
     const character = getCharacterById(characterId, context);
     if (!character) {
         toastr.warning("No NPC is currently selected.");
@@ -491,7 +538,7 @@ function forgetRelationshipForCurrent() {
 
 function forgetAllForCurrent() {
     const context = getContext();
-    const characterId = getActiveCharacterId(context);
+    const characterId = getSettingsCharacterId(context);
     const character = getCharacterById(characterId, context);
     if (!character) {
         toastr.warning("No NPC is currently selected.");
@@ -507,7 +554,7 @@ function forgetAllForCurrent() {
 
 function savePrivateFieldsForCurrent() {
     const context = getContext();
-    const characterId = getActiveCharacterId(context);
+    const characterId = getSettingsCharacterId(context);
     const character = getCharacterById(characterId, context);
     if (!character) {
         toastr.warning("No NPC is currently selected.");
@@ -562,6 +609,12 @@ function createSettingsPanel() {
                             <input id="npc-pov-memory-include-goals" type="checkbox">
                             <span>Inject private goals</span>
                         </label>
+                        <div class="npc-pov-memory-character-picker">
+                            <label>
+                                <span>NPC</span>
+                                <select id="npc-pov-memory-character-select" class="text_pole"></select>
+                            </label>
+                        </div>
                         <div class="npc-pov-memory-grid">
                             <label>
                                 <span>Update every</span>
@@ -596,7 +649,7 @@ function createSettingsPanel() {
                             <button id="npc-pov-memory-save-private" class="menu_button">Save private notes</button>
                         </div>
                         <div class="npc-pov-memory-buttons">
-                            <button id="npc-pov-memory-update-now" class="menu_button">Update current NPC</button>
+                            <button id="npc-pov-memory-update-now" class="menu_button">Update selected NPC</button>
                             <button id="npc-pov-memory-forget-relationship" class="menu_button">Forget relationship</button>
                             <button id="npc-pov-memory-forget-all" class="menu_button">Forget all</button>
                         </div>
@@ -641,6 +694,12 @@ function bindSettingsPanel() {
         setInjectedMemory();
     });
 
+    $("#npc-pov-memory-character-select").on("change", function () {
+        const id = Number($(this).val());
+        selectedSettingsCharacterId = Number.isInteger(id) ? id : null;
+        refreshSettingsPanel();
+    });
+
     $("#npc-pov-memory-interval").on("change", function () {
         getSettings().updateInterval = clampNumber($(this).val(), 1, 1000, DEFAULT_SETTINGS.updateInterval);
         saveSettings();
@@ -672,7 +731,7 @@ function bindSettingsPanel() {
 
     $("#npc-pov-memory-update-now").on("click", async function () {
         const button = $(this);
-        const characterId = getActiveCharacterId();
+        const characterId = getSettingsCharacterId();
         if (characterId === null) {
             toastr.warning("No NPC is currently selected.");
             return;
@@ -717,10 +776,44 @@ function bindSettingsPanel() {
     });
 }
 
+function refreshCharacterSelector(context, selectedCharacterId) {
+    const selector = $("#npc-pov-memory-character-select");
+    if (!selector.length) {
+        return;
+    }
+
+    const groupMemberIds = getGroupMemberCharacterIds(context);
+    const optionIds = groupMemberIds.length
+        ? groupMemberIds
+        : context.characters?.map((_, id) => id).filter(id => id === selectedCharacterId) || [];
+
+    selector.empty();
+
+    if (!optionIds.length) {
+        selector.append($("<option>").val("").text("No NPC selected"));
+        selector.prop("disabled", true);
+        $(".npc-pov-memory-character-picker").hide();
+        return;
+    }
+
+    for (const id of optionIds) {
+        const character = getCharacterById(id, context);
+        if (!character) {
+            continue;
+        }
+
+        selector.append($("<option>").val(String(id)).text(character.name || `NPC ${id + 1}`));
+    }
+
+    selector.val(String(selectedCharacterId));
+    selector.prop("disabled", optionIds.length <= 1);
+    $(".npc-pov-memory-character-picker").toggle(optionIds.length > 1);
+}
+
 function refreshSettingsPanel() {
     const settings = getSettings();
     const context = getContext();
-    const characterId = getActiveCharacterId(context);
+    const characterId = getSettingsCharacterId(context);
     const character = getCharacterById(characterId, context);
     const persona = getPersona();
 
@@ -733,6 +826,7 @@ function refreshSettingsPanel() {
     $("#npc-pov-memory-max-messages").val(settings.maxMessagesPerUpdate);
     $("#npc-pov-memory-max-words").val(settings.maxMemoryWords);
     $("#npc-pov-memory-response-length").val(settings.responseLength);
+    refreshCharacterSelector(context, characterId);
 
     if (!character) {
         $(".npc-pov-memory-current-target").text("Current target: none");
@@ -754,7 +848,7 @@ function refreshSettingsPanel() {
         goals ? `Goals: ${goals}` : "Goals: empty",
     ].join("\n\n");
 
-    $(".npc-pov-memory-current-target").text(`Current target: ${character.name} / ${persona.name}`);
+    $(".npc-pov-memory-current-target").text(`Viewing: ${character.name} / ${persona.name}`);
     $(".npc-pov-memory-preview").text(preview);
 
     if (!$("#npc-pov-memory-secrets").is(":focus")) {
@@ -814,7 +908,12 @@ function registerEvents() {
 
     source.on(events.CHAT_CHANGED, () => {
         lastDraftCharacterId = null;
-        setInjectedMemory();
+        selectedSettingsCharacterId = null;
+        if (getContext().groupId) {
+            clearInjectedMemory();
+        } else {
+            setInjectedMemory();
+        }
         refreshSettingsPanel();
     });
 
@@ -822,6 +921,14 @@ function registerEvents() {
 
     if (events.GROUP_MEMBER_DRAFTED) {
         source.on(events.GROUP_MEMBER_DRAFTED, onGroupMemberDrafted);
+    }
+
+    if (events.GROUP_WRAPPER_FINISHED) {
+        source.on(events.GROUP_WRAPPER_FINISHED, () => {
+            lastDraftCharacterId = null;
+            clearInjectedMemory();
+            refreshSettingsPanel();
+        });
     }
 
     for (const eventName of [events.MESSAGE_DELETED, events.MESSAGE_UPDATED, events.MESSAGE_SWIPED]) {
