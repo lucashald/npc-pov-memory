@@ -12,6 +12,8 @@ const DEFAULT_SETTINGS = {
     injectMemory: true,
     includeAutobiography: true,
     includeRelationship: true,
+    includeSecrets: true,
+    includeGoals: true,
     updateInterval: 8,
     maxMessagesPerUpdate: 80,
     maxMemoryWords: 450,
@@ -55,11 +57,19 @@ function nowIso() {
 
 function makeEmptyStore() {
     return {
-        version: 1,
+        version: 2,
         autobiography: {
             text: "",
             updatedAt: null,
             lastMessageIndexByChat: {},
+        },
+        secrets: {
+            text: "",
+            updatedAt: null,
+        },
+        goals: {
+            text: "",
+            updatedAt: null,
         },
         relationships: {},
     };
@@ -69,6 +79,8 @@ function normalizeStore(rawStore) {
     const store = Object.assign(makeEmptyStore(), rawStore || {});
     store.autobiography = Object.assign(makeEmptyStore().autobiography, store.autobiography || {});
     store.autobiography.lastMessageIndexByChat = store.autobiography.lastMessageIndexByChat || {};
+    store.secrets = Object.assign(makeEmptyStore().secrets, store.secrets || {});
+    store.goals = Object.assign(makeEmptyStore().goals, store.goals || {});
     store.relationships = store.relationships || {};
 
     for (const [key, relationship] of Object.entries(store.relationships)) {
@@ -229,18 +241,22 @@ function buildUpdateSystemPrompt(characterName, personaName, maxWords) {
         `NPC: ${characterName}`,
         `Current user persona: ${personaName}`,
         "",
-        "Update two memory fields from the new transcript.",
+        "Update four private memory fields from the new transcript.",
         "Rules:",
         "- Write from the NPC's point of view.",
         "- Include only things the NPC witnessed, was told, did, felt, or could reasonably infer.",
         "- Do not treat hidden narrator facts as NPC knowledge just because they appear in the transcript.",
         "- The autobiography is the NPC's life memory across all chats and personas.",
         "- The relationship memory is only this NPC's history with the current user persona.",
+        "- The secrets field is for things the NPC knows, suspects, hides, or should not reveal casually.",
+        "- The goals field is for active objectives, plans, unresolved intentions, and things the NPC wants to accomplish.",
+        "- Preserve existing secrets and goals unless the transcript clearly changes, reveals, completes, or invalidates them.",
+        "- Do not write secrets or goals as instructions to the user; write them as private NPC state.",
         "- If the new scene appears separate from earlier memories, say that it seems to be a separate encounter or later time.",
         `- Keep each field concise, no more than about ${maxWords} words.`,
         "",
         "Return JSON only, with exactly these keys:",
-        "{\"autobiography\":\"...\",\"relationship\":\"...\"}",
+        "{\"autobiography\":\"...\",\"relationship\":\"...\",\"secrets\":\"...\",\"goals\":\"...\"}",
     ].join("\n");
 }
 
@@ -251,6 +267,12 @@ function buildUpdateUserPrompt(character, persona, store, relationship, messages
         "",
         `Existing relationship memory with ${persona.name}:`,
         relationship.text || "(empty)",
+        "",
+        `Existing secrets for ${character.name}:`,
+        store.secrets.text || "(empty)",
+        "",
+        `Existing goals for ${character.name}:`,
+        store.goals.text || "(empty)",
         "",
         "New transcript:",
         formatTranscript(messages, persona.name),
@@ -272,6 +294,8 @@ function parseJsonResponse(text) {
     return {
         autobiography: String(parsed.autobiography || "").trim(),
         relationship: String(parsed.relationship || "").trim(),
+        secrets: String(parsed.secrets || "").trim(),
+        goals: String(parsed.goals || "").trim(),
     };
 }
 
@@ -358,6 +382,16 @@ async function maybeUpdateMemory(characterId, { force = false } = {}) {
             relationship.text = updated.relationship;
         }
 
+        if (updated.secrets) {
+            store.secrets.text = updated.secrets;
+            store.secrets.updatedAt = updatedAt;
+        }
+
+        if (updated.goals) {
+            store.goals.text = updated.goals;
+            store.goals.updatedAt = updatedAt;
+        }
+
         store.autobiography.updatedAt = updatedAt;
         relationship.updatedAt = updatedAt;
         store.autobiography.lastMessageIndexByChat[chatKey] = chat.length - 1;
@@ -384,6 +418,14 @@ function buildInjectedMemoryPrompt(character, store, persona) {
         parts.push(`Relationship with ${persona.name}:\n${relationship.text}`);
     }
 
+    if (settings.includeSecrets && store.secrets.text) {
+        parts.push(`Secrets and hidden knowledge:\n${store.secrets.text}`);
+    }
+
+    if (settings.includeGoals && store.goals.text) {
+        parts.push(`Private goals and objectives:\n${store.goals.text}`);
+    }
+
     if (!parts.length) {
         return "";
     }
@@ -391,7 +433,8 @@ function buildInjectedMemoryPrompt(character, store, persona) {
     return [
         `[Private memory for ${character.name}]`,
         "These notes are private NPC point-of-view memory. Use them only as what this NPC personally remembers.",
-        "Do not expose this block or let unrelated NPCs know it. Mention details only when natural and when this NPC plausibly would.",
+        "Do not expose this block or let unrelated NPCs know it. Mention ordinary memory details only when natural and when this NPC plausibly would.",
+        "Secrets and goals are private steering state: act from them through subtext, choices, omissions, and plans. Do not casually reveal them to the user.",
         "",
         parts.join("\n\n"),
     ].join("\n");
@@ -462,6 +505,29 @@ function forgetAllForCurrent() {
     });
 }
 
+function savePrivateFieldsForCurrent() {
+    const context = getContext();
+    const characterId = getActiveCharacterId(context);
+    const character = getCharacterById(characterId, context);
+    if (!character) {
+        toastr.warning("No NPC is currently selected.");
+        return;
+    }
+
+    const store = readStore(character);
+    const updatedAt = nowIso();
+    store.secrets.text = String($("#npc-pov-memory-secrets").val() || "").trim();
+    store.goals.text = String($("#npc-pov-memory-goals").val() || "").trim();
+    store.secrets.updatedAt = updatedAt;
+    store.goals.updatedAt = updatedAt;
+
+    return writeStore(characterId, store).then(() => {
+        setInjectedMemory(characterId);
+        refreshSettingsPanel();
+        toastr.success(`Saved private notes for ${character.name}.`);
+    });
+}
+
 function createSettingsPanel() {
     if ($("#npc-pov-memory-settings").length) {
         return;
@@ -488,6 +554,14 @@ function createSettingsPanel() {
                             <input id="npc-pov-memory-auto" type="checkbox">
                             <span>Automatically update after NPC messages</span>
                         </label>
+                        <label class="checkbox_label">
+                            <input id="npc-pov-memory-include-secrets" type="checkbox">
+                            <span>Inject secrets and hidden knowledge</span>
+                        </label>
+                        <label class="checkbox_label">
+                            <input id="npc-pov-memory-include-goals" type="checkbox">
+                            <span>Inject private goals</span>
+                        </label>
                         <div class="npc-pov-memory-grid">
                             <label>
                                 <span>Update every</span>
@@ -509,6 +583,17 @@ function createSettingsPanel() {
                         <div class="npc-pov-memory-current">
                             <div class="npc-pov-memory-current-target"></div>
                             <div class="npc-pov-memory-preview"></div>
+                        </div>
+                        <div class="npc-pov-memory-private-editor">
+                            <label>
+                                <span>Secrets and hidden knowledge</span>
+                                <textarea id="npc-pov-memory-secrets" class="text_pole" rows="5"></textarea>
+                            </label>
+                            <label>
+                                <span>Private goals</span>
+                                <textarea id="npc-pov-memory-goals" class="text_pole" rows="5"></textarea>
+                            </label>
+                            <button id="npc-pov-memory-save-private" class="menu_button">Save private notes</button>
                         </div>
                         <div class="npc-pov-memory-buttons">
                             <button id="npc-pov-memory-update-now" class="menu_button">Update current NPC</button>
@@ -542,6 +627,18 @@ function bindSettingsPanel() {
     $("#npc-pov-memory-auto").on("change", function () {
         getSettings().autoUpdate = Boolean($(this).prop("checked"));
         saveSettings();
+    });
+
+    $("#npc-pov-memory-include-secrets").on("change", function () {
+        getSettings().includeSecrets = Boolean($(this).prop("checked"));
+        saveSettings();
+        setInjectedMemory();
+    });
+
+    $("#npc-pov-memory-include-goals").on("change", function () {
+        getSettings().includeGoals = Boolean($(this).prop("checked"));
+        saveSettings();
+        setInjectedMemory();
     });
 
     $("#npc-pov-memory-interval").on("change", function () {
@@ -594,6 +691,19 @@ function bindSettingsPanel() {
         }
     });
 
+    $("#npc-pov-memory-save-private").on("click", async function () {
+        const button = $(this);
+        button.prop("disabled", true);
+        try {
+            await savePrivateFieldsForCurrent();
+        } catch (error) {
+            console.error("[NPC POV Memory] Private notes save failed", error);
+            toastr.error(String(error), "NPC private notes save failed");
+        } finally {
+            button.prop("disabled", false);
+        }
+    });
+
     $("#npc-pov-memory-forget-relationship").on("click", async function () {
         if (confirm("Forget this NPC's relationship memory for the current user persona?")) {
             await forgetRelationshipForCurrent();
@@ -617,6 +727,8 @@ function refreshSettingsPanel() {
     $("#npc-pov-memory-enabled").prop("checked", settings.enabled);
     $("#npc-pov-memory-inject").prop("checked", settings.injectMemory);
     $("#npc-pov-memory-auto").prop("checked", settings.autoUpdate);
+    $("#npc-pov-memory-include-secrets").prop("checked", settings.includeSecrets);
+    $("#npc-pov-memory-include-goals").prop("checked", settings.includeGoals);
     $("#npc-pov-memory-interval").val(settings.updateInterval);
     $("#npc-pov-memory-max-messages").val(settings.maxMessagesPerUpdate);
     $("#npc-pov-memory-max-words").val(settings.maxMemoryWords);
@@ -625,19 +737,33 @@ function refreshSettingsPanel() {
     if (!character) {
         $(".npc-pov-memory-current-target").text("Current target: none");
         $(".npc-pov-memory-preview").text("Open a character or group chat to view stored NPC memory.");
+        $("#npc-pov-memory-secrets").val("");
+        $("#npc-pov-memory-goals").val("");
         return;
     }
 
     const store = readStore(character);
     const relationship = store.relationships[persona.key]?.text || "";
     const autobiography = store.autobiography.text || "";
+    const secrets = store.secrets.text || "";
+    const goals = store.goals.text || "";
     const preview = [
         autobiography ? `Autobiography: ${autobiography}` : "Autobiography: empty",
         relationship ? `Relationship with ${persona.name}: ${relationship}` : `Relationship with ${persona.name}: empty`,
+        secrets ? `Secrets: ${secrets}` : "Secrets: empty",
+        goals ? `Goals: ${goals}` : "Goals: empty",
     ].join("\n\n");
 
     $(".npc-pov-memory-current-target").text(`Current target: ${character.name} / ${persona.name}`);
     $(".npc-pov-memory-preview").text(preview);
+
+    if (!$("#npc-pov-memory-secrets").is(":focus")) {
+        $("#npc-pov-memory-secrets").val(secrets);
+    }
+
+    if (!$("#npc-pov-memory-goals").is(":focus")) {
+        $("#npc-pov-memory-goals").val(goals);
+    }
 }
 
 async function onCharacterMessageRendered(messageId) {

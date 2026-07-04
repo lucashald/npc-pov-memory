@@ -37,6 +37,25 @@
     line-height: 1.35;
 }
 
+#npc-pov-memory-settings .npc-pov-memory-private-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#npc-pov-memory-settings .npc-pov-memory-private-editor label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#npc-pov-memory-settings .npc-pov-memory-private-editor textarea {
+    width: 100%;
+    min-height: 88px;
+    resize: vertical;
+    line-height: 1.35;
+}
+
 #npc-pov-memory-settings .npc-pov-memory-buttons {
     display: flex;
     flex-wrap: wrap;
