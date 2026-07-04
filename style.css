@@ -1,0 +1,50 @@
+#npc-pov-memory-settings .npc-pov-memory-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#npc-pov-memory-settings .npc-pov-memory-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+#npc-pov-memory-settings .npc-pov-memory-grid label {
+    display: grid;
+    grid-template-columns: 1fr 90px;
+    align-items: center;
+    gap: 8px;
+}
+
+#npc-pov-memory-settings .npc-pov-memory-current {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    padding: 8px;
+    background: var(--black30a);
+}
+
+#npc-pov-memory-settings .npc-pov-memory-current-target {
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+#npc-pov-memory-settings .npc-pov-memory-preview {
+    max-height: 180px;
+    overflow: auto;
+    white-space: pre-wrap;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    line-height: 1.35;
+}
+
+#npc-pov-memory-settings .npc-pov-memory-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+@media (max-width: 600px) {
+    #npc-pov-memory-settings .npc-pov-memory-grid {
+        grid-template-columns: 1fr;
+    }
+}

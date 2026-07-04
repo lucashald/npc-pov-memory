@@ -1,0 +1,12 @@
+{
+  "display_name": "NPC POV Memory",
+  "loading_order": 1,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "lucashald",
+  "version": "0.1.0",
+  "homePage": "https://github.com/lucashald/npc-pov-memory",
+  "auto_update": true
+}
