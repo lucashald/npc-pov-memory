@@ -844,8 +844,6 @@ function refreshSettingsPanel() {
     const preview = [
         autobiography ? `Autobiography: ${autobiography}` : "Autobiography: empty",
         relationship ? `Relationship with ${persona.name}: ${relationship}` : `Relationship with ${persona.name}: empty`,
-        secrets ? `Secrets: ${secrets}` : "Secrets: empty",
-        goals ? `Goals: ${goals}` : "Goals: empty",
     ].join("\n\n");
 
     $(".npc-pov-memory-current-target").text(`Viewing: ${character.name} / ${persona.name}`);
