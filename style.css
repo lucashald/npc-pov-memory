@@ -1,3 +1,62 @@
+#npc-pov-memory-speaker-bar {
+    display: none;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px 2px;
+}
+
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-list {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+}
+
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-item {
+    flex: 0 0 auto;
+}
+
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-trigger {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    max-width: 160px;
+    box-sizing: border-box;
+    padding: 3px 8px 3px 4px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    background: var(--black30a);
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+}
+
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-trigger:hover:not(:disabled) {
+    filter: brightness(1.12);
+}
+
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-trigger:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-trigger img {
+    width: 26px;
+    height: 26px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-trigger span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 #npc-pov-memory-settings .npc-pov-memory-body {
     display: flex;
     flex-direction: column;
@@ -76,5 +135,9 @@
 @media (max-width: 600px) {
     #npc-pov-memory-settings .npc-pov-memory-grid {
         grid-template-columns: 1fr;
+    }
+
+    #npc-pov-memory-speaker-bar .npc-pov-memory-speaker-trigger {
+        max-width: 120px;
     }
 }
