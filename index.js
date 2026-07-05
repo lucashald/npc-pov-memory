@@ -7,6 +7,12 @@ import {
     getThumbnailUrl,
 } from "../../../../script.js";
 import { removeReasoningFromString } from "../../../reasoning.js";
+import {
+    editGroup,
+    group_activation_strategy,
+    groups,
+    selected_group,
+} from "../../../group-chats.js";
 
 const EXTENSION_KEY = "npc-pov-memory";
 const STORAGE_KEY = "npcPovMemory";
@@ -25,6 +31,7 @@ const DEFAULT_SETTINGS = {
     maxMemoryWords: 450,
     responseLength: 700,
     showGroupSpeakerButtons: false,
+    focusClearStrategy: group_activation_strategy.POOLED,
     depth: 4,
     position: extension_prompt_types.IN_PROMPT,
     role: extension_prompt_roles.SYSTEM,
@@ -34,6 +41,10 @@ let lastDraftCharacterId = null;
 let selectedSettingsCharacterId = null;
 let isUpdating = false;
 let isGroupGenerationRunning = false;
+let focusedSpeakerCharacterId = null;
+let focusedSpeakerGroupId = null;
+let isHandlingFocusedReply = false;
+let pendingFocusedReply = false;
 
 function clone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -149,6 +160,10 @@ function getCharacterById(characterId, context = getContext()) {
     }
 
     return context.characters?.[id] || null;
+}
+
+function getGroupById(groupId) {
+    return groups?.find(item => item.id === groupId) || null;
 }
 
 function getCurrentGroup(context = getContext()) {
@@ -627,6 +642,12 @@ function createSettingsPanel() {
                             <input id="npc-pov-memory-show-speaker-buttons" type="checkbox">
                             <span>Show group speaker buttons</span>
                         </label>
+                        <div class="npc-pov-memory-focus-setting">
+                            <label>
+                                <span>When focus clears</span>
+                                <select id="npc-pov-memory-focus-clear-strategy" class="text_pole"></select>
+                            </label>
+                        </div>
                         <label class="checkbox_label">
                             <input id="npc-pov-memory-include-secrets" type="checkbox">
                             <span>Inject secrets and hidden knowledge</span>
@@ -710,6 +731,12 @@ function bindSettingsPanel() {
 
     $("#npc-pov-memory-show-speaker-buttons").on("change", function () {
         getSettings().showGroupSpeakerButtons = Boolean($(this).prop("checked"));
+        saveSettings();
+        refreshGroupSpeakerBar();
+    });
+
+    $("#npc-pov-memory-focus-clear-strategy").on("change", function () {
+        getSettings().focusClearStrategy = clampNumber($(this).val(), 0, 3, group_activation_strategy.POOLED);
         saveSettings();
         refreshGroupSpeakerBar();
     });
@@ -809,6 +836,10 @@ function bindSettingsPanel() {
 }
 
 function ensureGroupSpeakerBar() {
+    const settings = getSettings();
+    const strategyOptions = getGroupActivationStrategyOptions(settings.focusClearStrategy);
+    $("#npc-pov-memory-focus-clear-strategy").html(strategyOptions);
+
     if ($("#npc-pov-memory-speaker-bar").length) {
         return;
     }
@@ -825,12 +856,101 @@ function ensureGroupSpeakerBar() {
         $("#send_form").prepend(bar);
     }
 
-    bar.on("click", ".npc-pov-memory-speaker-trigger", async function () {
+    bar.on("click", ".npc-pov-memory-clear-focus", async function () {
+        await clearFocusedSpeaker();
+    });
+
+    bar.on("click", ".npc-pov-memory-speaker-trigger", async function (event) {
         const characterId = Number($(this).attr("data-character-id"));
         if (Number.isInteger(characterId)) {
-            await triggerGroupSpeaker(characterId);
+            if (event.shiftKey) {
+                await toggleFocusedSpeaker(characterId);
+            } else {
+                await triggerGroupSpeaker(characterId);
+            }
         }
     });
+}
+
+function getGroupActivationStrategyOptions(selectedValue) {
+    const options = [
+        [group_activation_strategy.POOLED, "Pooled order"],
+        [group_activation_strategy.NATURAL, "Natural order"],
+        [group_activation_strategy.MANUAL, "Manual"],
+    ];
+
+    return options
+        .map(([value, label]) => `<option value="${value}"${Number(selectedValue) === value ? " selected" : ""}>${label}</option>`)
+        .join("");
+}
+
+async function setCurrentGroupActivationStrategy(strategy) {
+    const context = getContext();
+    const groupId = context.groupId || selected_group;
+    const group = getGroupById(groupId);
+    if (!group) {
+        return;
+    }
+
+    group.activation_strategy = Number(strategy);
+    await editGroup(group.id, false, false);
+}
+
+function focusedSpeakerIsCurrent(context = getContext()) {
+    return Boolean(
+        focusedSpeakerCharacterId !== null
+        && focusedSpeakerGroupId
+        && context.groupId === focusedSpeakerGroupId
+        && getGroupMemberCharacterIds(context).includes(focusedSpeakerCharacterId)
+    );
+}
+
+async function setFocusedSpeaker(characterId) {
+    const context = getContext();
+    const member = getGroupMemberCharacters(context).find(item => item.id === characterId);
+    if (!context.groupId || !member) {
+        toastr.warning("That NPC is not in the current group.");
+        refreshGroupSpeakerBar();
+        return;
+    }
+
+    if (member.disabled) {
+        toastr.warning(`${member.character?.name || "That NPC"} is disabled in this group.`);
+        refreshGroupSpeakerBar();
+        return;
+    }
+
+    focusedSpeakerCharacterId = characterId;
+    focusedSpeakerGroupId = context.groupId;
+    selectedSettingsCharacterId = characterId;
+    pendingFocusedReply = false;
+    await setCurrentGroupActivationStrategy(group_activation_strategy.MANUAL);
+    refreshSettingsPanel();
+    refreshGroupSpeakerBar();
+    toastr.info(`Focused speaker: ${member.character?.name || "selected NPC"}.`);
+}
+
+async function clearFocusedSpeaker() {
+    if (focusedSpeakerCharacterId === null) {
+        return;
+    }
+
+    focusedSpeakerCharacterId = null;
+    focusedSpeakerGroupId = null;
+    pendingFocusedReply = false;
+    await setCurrentGroupActivationStrategy(getSettings().focusClearStrategy);
+    refreshSettingsPanel();
+    refreshGroupSpeakerBar();
+    toastr.info("Focused speaker cleared.");
+}
+
+async function toggleFocusedSpeaker(characterId) {
+    if (focusedSpeakerIsCurrent() && focusedSpeakerCharacterId === characterId) {
+        await clearFocusedSpeaker();
+        return;
+    }
+
+    await setFocusedSpeaker(characterId);
 }
 
 function getCharacterAvatarUrl(character) {
@@ -857,6 +977,13 @@ function refreshGroupSpeakerBar() {
         return;
     }
 
+    if (focusedSpeakerIsCurrent(context)) {
+        const focusedCharacter = getCharacterById(focusedSpeakerCharacterId, context);
+        const clearButton = $("<button>", { type: "button", class: "npc-pov-memory-clear-focus", title: "Clear focused speaker" });
+        clearButton.append($("<i>", { class: "fa-solid fa-xmark" })).append($("<span>").text(focusedCharacter?.name || "Clear focus"));
+        list.append($("<div>", { class: "npc-pov-memory-speaker-item" }).append(clearButton));
+    }
+
     for (const member of members) {
         const character = member.character;
         if (!character) {
@@ -864,12 +991,15 @@ function refreshGroupSpeakerBar() {
         }
 
         const name = character.name || `NPC ${member.id + 1}`;
+        const isFocused = focusedSpeakerIsCurrent(context) && focusedSpeakerCharacterId === member.id;
         const disabled = member.disabled || isGroupGenerationRunning;
         const title = isGroupGenerationRunning
             ? "Wait for the current group reply to finish"
             : member.disabled
                 ? `${name} is disabled in this group`
-                : `Trigger a reply from ${name}`;
+                : isFocused
+                    ? `Click for one reply from ${name}. Shift-click to clear focus.`
+                    : `Click for one reply from ${name}. Shift-click to focus.`;
         const button = $("<button>", {
             type: "button",
             class: "npc-pov-memory-speaker-trigger",
@@ -880,6 +1010,7 @@ function refreshGroupSpeakerBar() {
 
         button.prop("disabled", disabled);
         button.toggleClass("npc-pov-memory-speaker-disabled", member.disabled);
+        button.toggleClass("npc-pov-memory-speaker-focused", isFocused);
         button.append($("<img>", {
             src: getCharacterAvatarUrl(character),
             alt: "",
@@ -931,6 +1062,48 @@ async function triggerGroupSpeaker(characterId) {
     }
 }
 
+async function maybeTriggerFocusedSpeaker(messageId) {
+    const context = getContext();
+    if (isHandlingFocusedReply || isGroupGenerationRunning || !focusedSpeakerIsCurrent(context)) {
+        return false;
+    }
+
+    const message = context.chat?.[messageId];
+    if (!message?.is_user) {
+        return;
+    }
+
+    isHandlingFocusedReply = true;
+    try {
+        await triggerGroupSpeaker(focusedSpeakerCharacterId);
+    } finally {
+        isHandlingFocusedReply = false;
+    }
+
+    return true;
+}
+
+function queueFocusedSpeakerReply(messageId) {
+    const context = getContext();
+    const message = context.chat?.[messageId];
+    if (!message?.is_user || !focusedSpeakerIsCurrent(context)) {
+        return;
+    }
+
+    pendingFocusedReply = true;
+}
+
+async function runPendingFocusedSpeakerReply() {
+    if (!pendingFocusedReply || isHandlingFocusedReply || isGroupGenerationRunning) {
+        return;
+    }
+
+    pendingFocusedReply = false;
+    const context = getContext();
+    const lastMessageId = (context.chat || []).length - 1;
+    await maybeTriggerFocusedSpeaker(lastMessageId);
+}
+
 function refreshCharacterSelector(context, selectedCharacterId) {
     const selector = $("#npc-pov-memory-character-select");
     if (!selector.length) {
@@ -977,6 +1150,7 @@ function refreshSettingsPanel() {
     $("#npc-pov-memory-auto").prop("checked", settings.autoUpdate);
     $("#npc-pov-memory-include-secrets").prop("checked", settings.includeSecrets);
     $("#npc-pov-memory-show-speaker-buttons").prop("checked", settings.showGroupSpeakerButtons);
+    $("#npc-pov-memory-focus-clear-strategy").val(String(settings.focusClearStrategy));
     $("#npc-pov-memory-include-goals").prop("checked", settings.includeGoals);
     $("#npc-pov-memory-interval").val(settings.updateInterval);
     $("#npc-pov-memory-max-messages").val(settings.maxMessagesPerUpdate);
@@ -1074,6 +1248,9 @@ function registerEvents() {
     });
 
     source.on(events.CHARACTER_MESSAGE_RENDERED, onCharacterMessageRendered);
+    if (events.MESSAGE_SENT) {
+        source.on(events.MESSAGE_SENT, queueFocusedSpeakerReply);
+    }
 
     if (events.GROUP_MEMBER_DRAFTED) {
         source.on(events.GROUP_MEMBER_DRAFTED, onGroupMemberDrafted);
@@ -1087,12 +1264,13 @@ function registerEvents() {
     }
 
     if (events.GROUP_WRAPPER_FINISHED) {
-        source.on(events.GROUP_WRAPPER_FINISHED, () => {
+        source.on(events.GROUP_WRAPPER_FINISHED, async () => {
             isGroupGenerationRunning = false;
             lastDraftCharacterId = null;
             clearInjectedMemory();
             refreshSettingsPanel();
             refreshGroupSpeakerBar();
+            await runPendingFocusedSpeakerReply();
         });
     }
 
