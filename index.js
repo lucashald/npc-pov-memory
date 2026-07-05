@@ -856,10 +856,6 @@ function ensureGroupSpeakerBar() {
         $("#send_form").prepend(bar);
     }
 
-    bar.on("click", ".npc-pov-memory-clear-focus", async function () {
-        await clearFocusedSpeaker();
-    });
-
     bar.on("click", ".npc-pov-memory-speaker-trigger", async function (event) {
         const characterId = Number($(this).attr("data-character-id"));
         if (Number.isInteger(characterId)) {
@@ -975,13 +971,6 @@ function refreshGroupSpeakerBar() {
     if (!settings.showGroupSpeakerButtons || !context.groupId || !members.length) {
         bar.hide();
         return;
-    }
-
-    if (focusedSpeakerIsCurrent(context)) {
-        const focusedCharacter = getCharacterById(focusedSpeakerCharacterId, context);
-        const clearButton = $("<button>", { type: "button", class: "npc-pov-memory-clear-focus", title: "Clear focused speaker" });
-        clearButton.append($("<i>", { class: "fa-solid fa-xmark" })).append($("<span>").text(focusedCharacter?.name || "Clear focus"));
-        list.append($("<div>", { class: "npc-pov-memory-speaker-item" }).append(clearButton));
     }
 
     for (const member of members) {

@@ -33,21 +33,6 @@
     cursor: pointer;
 }
 
-#npc-pov-memory-speaker-bar .npc-pov-memory-clear-focus {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 34px;
-    box-sizing: border-box;
-    padding: 3px 8px;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 6px;
-    background: var(--SmartThemeQuoteColor);
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    white-space: nowrap;
-}
-
 #npc-pov-memory-speaker-bar .npc-pov-memory-speaker-trigger:hover:not(:disabled) {
     filter: brightness(1.12);
 }
