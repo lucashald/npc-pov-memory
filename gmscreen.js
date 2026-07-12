@@ -31,3 +31,8 @@ export function stripStandaloneBrackets(text) {
         .replace(/\n{3,}/g, "\n\n")
         .trim();
 }
+
+export function gmscreenRole(character) {
+    const role = character?.data?.extensions?.gmscreen_role;
+    return role === "gm" || role === "npc" ? role : null;
+}

@@ -44,3 +44,28 @@ test("strips multiple trailing tags on one line", () => {
 test("passes non-string through unchanged", () => {
     assert.equal(stripStandaloneBrackets(undefined), undefined);
 });
+
+import { gmscreenRole } from "./gmscreen.js";
+
+const card = (role) => ({ data: { extensions: role === undefined ? {} : { gmscreen_role: role } } });
+
+test("gmscreenRole reads an explicit npc", () => {
+    assert.equal(gmscreenRole(card("npc")), "npc");
+});
+
+test("gmscreenRole reads an explicit gm", () => {
+    assert.equal(gmscreenRole(card("gm")), "gm");
+});
+
+test("gmscreenRole returns null when unset", () => {
+    assert.equal(gmscreenRole(card(undefined)), null);
+});
+
+test("gmscreenRole returns null for a malformed value", () => {
+    assert.equal(gmscreenRole(card("boss")), null);
+});
+
+test("gmscreenRole tolerates a missing character", () => {
+    assert.equal(gmscreenRole(null), null);
+    assert.equal(gmscreenRole(undefined), null);
+});
