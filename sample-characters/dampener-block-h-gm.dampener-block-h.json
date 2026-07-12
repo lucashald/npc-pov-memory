@@ -26,6 +26,7 @@
     "creator": "lucashald",
     "character_version": "1.0",
     "extensions": {
+      "gmscreen_role": "gm",
       "npcPovMemory": {
         "version": 2,
         "autobiography": {
