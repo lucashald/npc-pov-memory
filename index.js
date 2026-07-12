@@ -615,6 +615,25 @@ function savePrivateFieldsForCurrent() {
     });
 }
 
+async function setGmscreenRoleForCurrent(value) {
+    const context = getContext();
+    const characterId = getSettingsCharacterId(context);
+    const character = getCharacterById(characterId, context);
+    if (!character) {
+        toastr.warning("No NPC is currently selected.");
+        return;
+    }
+    // "gm"/"npc" persist an explicit value; anything else clears back to unset.
+    const roleValue = value === "gm" || value === "npc" ? value : undefined;
+    await context.writeExtensionField(characterId, "gmscreen_role", roleValue);
+    refreshSettingsPanel();
+    toastr.success(
+        roleValue
+            ? `Set ${character.name} role to ${roleValue.toUpperCase()}.`
+            : `Cleared ${character.name} gmscreen role.`,
+    );
+}
+
 function createSettingsPanel() {
     if ($("#npc-pov-memory-settings").length) {
         return;
@@ -672,6 +691,16 @@ function createSettingsPanel() {
                                 <span>NPC</span>
                                 <select id="npc-pov-memory-character-select" class="text_pole"></select>
                             </label>
+                            <div class="npc-pov-memory-role-picker">
+                                <label>
+                                    <span>Card role (gmscreen)</span>
+                                    <select id="npc-pov-memory-role" class="text_pole">
+                                        <option value="">Default (unset)</option>
+                                        <option value="gm">GM / narrator</option>
+                                        <option value="npc">NPC</option>
+                                    </select>
+                                </label>
+                            </div>
                         </div>
                         <div class="npc-pov-memory-grid">
                             <label>
@@ -778,6 +807,10 @@ function bindSettingsPanel() {
         const id = Number($(this).val());
         selectedSettingsCharacterId = Number.isInteger(id) ? id : null;
         refreshSettingsPanel();
+    });
+
+    $("#npc-pov-memory-role").on("change", async function () {
+        await setGmscreenRoleForCurrent(String($(this).val() || ""));
     });
 
     $("#npc-pov-memory-interval").on("change", function () {
@@ -1176,8 +1209,12 @@ function refreshSettingsPanel() {
         $(".npc-pov-memory-preview").text("Open a character or group chat to view stored NPC memory.");
         $("#npc-pov-memory-secrets").val("");
         $("#npc-pov-memory-goals").val("");
+        $("#npc-pov-memory-role").val("");
         return;
     }
+
+    const rawRole = character?.data?.extensions?.gmscreen_role;
+    $("#npc-pov-memory-role").val(rawRole === "gm" || rawRole === "npc" ? rawRole : "");
 
     const store = readStore(character);
     const relationship = store.relationships[persona.key]?.text || "";
