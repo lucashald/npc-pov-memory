@@ -13,6 +13,7 @@ import {
     groups,
     selected_group,
 } from "../../../group-chats.js";
+import { gmscreenRole, stripStandaloneBrackets } from "./gmscreen.js";
 
 const EXTENSION_KEY = "npc-pov-memory";
 const STORAGE_KEY = "npcPovMemory";
@@ -1289,6 +1290,22 @@ export async function init() {
     setInjectedMemory();
     console.log("[NPC POV Memory] Extension loaded");
 }
+
+// Spike: log what the interceptor receives without modifying anything, to
+// determine whether the chat array is a throwaway copy or the live chat.
+globalThis.npcPovMemoryGenerateInterceptor = async function (chat, contextSize, abort, type) {
+    try {
+        const drafting = lastDraftCharacterId ?? getActiveCharacterId();
+        console.log("[NPC POV Memory] interceptor fired", {
+            type,
+            length: Array.isArray(chat) ? chat.length : null,
+            draftingCharacterId: drafting,
+            firstIsLiveRef: Array.isArray(chat) && chat[0] === getContext().chat?.[0],
+        });
+    } catch (error) {
+        console.error("[NPC POV Memory] interceptor spike error", error);
+    }
+};
 
 jQuery(async () => {
     try {
