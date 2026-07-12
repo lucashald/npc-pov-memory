@@ -448,9 +448,22 @@ async function maybeUpdateMemory(characterId, { force = false } = {}) {
         return false;
     }
 
+    // For cards that filter GM/meta brackets from their replies, strip those
+    // brackets from the transcript the summarizer sees too, so hidden info
+    // never enters this NPC's persisted memory.
+    const summaryMessages = shouldFilterForCharacter(character)
+        ? messages
+            .map(message => Object.assign({}, message, { mes: stripStandaloneBrackets(String(message.mes ?? "")) }))
+            .filter(message => cleanMessageText(message.mes))
+        : messages;
+
+    if (!summaryMessages.length) {
+        return false;
+    }
+
     const maxWords = clampNumber(settings.maxMemoryWords, 50, 2000, DEFAULT_SETTINGS.maxMemoryWords);
     const systemPrompt = buildUpdateSystemPrompt(character.name, persona.name, maxWords);
-    const userPrompt = buildUpdateUserPrompt(character, persona, store, relationship, messages);
+    const userPrompt = buildUpdateUserPrompt(character, persona, store, relationship, summaryMessages);
 
     try {
         isUpdating = true;
