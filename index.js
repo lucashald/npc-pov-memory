@@ -27,6 +27,8 @@ const DEFAULT_SETTINGS = {
     includeRelationship: true,
     includeSecrets: true,
     includeGoals: true,
+    filterMetaForNpcs: true,
+    treatUnmarkedAsNpc: false,
     updateInterval: 8,
     maxMessagesPerUpdate: 80,
     maxMemoryWords: 450,
@@ -657,6 +659,14 @@ function createSettingsPanel() {
                             <input id="npc-pov-memory-include-goals" type="checkbox">
                             <span>Inject private goals</span>
                         </label>
+                        <label class="checkbox_label">
+                            <input id="npc-pov-memory-filter-meta" type="checkbox">
+                            <span>Strip GM/meta bracket tags for non-GM NPCs</span>
+                        </label>
+                        <label class="checkbox_label">
+                            <input id="npc-pov-memory-treat-unmarked" type="checkbox">
+                            <span>Treat unmarked cards as NPCs (strip by default)</span>
+                        </label>
                         <div class="npc-pov-memory-character-picker">
                             <label>
                                 <span>NPC</span>
@@ -752,6 +762,16 @@ function bindSettingsPanel() {
         getSettings().includeGoals = Boolean($(this).prop("checked"));
         saveSettings();
         setInjectedMemory();
+    });
+
+    $("#npc-pov-memory-filter-meta").on("change", function () {
+        getSettings().filterMetaForNpcs = Boolean($(this).prop("checked"));
+        saveSettings();
+    });
+
+    $("#npc-pov-memory-treat-unmarked").on("change", function () {
+        getSettings().treatUnmarkedAsNpc = Boolean($(this).prop("checked"));
+        saveSettings();
     });
 
     $("#npc-pov-memory-character-select").on("change", function () {
@@ -1142,6 +1162,8 @@ function refreshSettingsPanel() {
     $("#npc-pov-memory-show-speaker-buttons").prop("checked", settings.showGroupSpeakerButtons);
     $("#npc-pov-memory-focus-clear-strategy").val(String(settings.focusClearStrategy));
     $("#npc-pov-memory-include-goals").prop("checked", settings.includeGoals);
+    $("#npc-pov-memory-filter-meta").prop("checked", settings.filterMetaForNpcs);
+    $("#npc-pov-memory-treat-unmarked").prop("checked", settings.treatUnmarkedAsNpc);
     $("#npc-pov-memory-interval").val(settings.updateInterval);
     $("#npc-pov-memory-max-messages").val(settings.maxMessagesPerUpdate);
     $("#npc-pov-memory-max-words").val(settings.maxMemoryWords);
