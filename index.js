@@ -1291,19 +1291,55 @@ export async function init() {
     console.log("[NPC POV Memory] Extension loaded");
 }
 
-// Spike: log what the interceptor receives without modifying anything, to
-// determine whether the chat array is a throwaway copy or the live chat.
+// Decide whether this card's outgoing transcript should have bracket tags
+// stripped. Only an explicit "npc" strips; "gm"/unset never strips, unless
+// the global "treat unmarked as NPC" opt-out is on (then unset also strips).
+function shouldFilterForCharacter(character) {
+    const settings = getSettings();
+    if (!settings.enabled || !settings.filterMetaForNpcs) {
+        return false;
+    }
+    const role = gmscreenRole(character);
+    if (role === "npc") {
+        return true;
+    }
+    if (role === "gm") {
+        return false;
+    }
+    return Boolean(settings.treatUnmarkedAsNpc);
+}
+
 globalThis.npcPovMemoryGenerateInterceptor = async function (chat, contextSize, abort, type) {
     try {
-        const drafting = lastDraftCharacterId ?? getActiveCharacterId();
-        console.log("[NPC POV Memory] interceptor fired", {
-            type,
-            length: Array.isArray(chat) ? chat.length : null,
-            draftingCharacterId: drafting,
-            firstIsLiveRef: Array.isArray(chat) && chat[0] === getContext().chat?.[0],
-        });
+        if (!Array.isArray(chat) || !chat.length) {
+            return;
+        }
+        const context = getContext();
+        const draftingId = lastDraftCharacterId ?? getActiveCharacterId(context);
+        const character = getCharacterById(draftingId, context);
+        if (!shouldFilterForCharacter(character)) {
+            return;
+        }
+
+        // Walk backwards so slot removal does not shift not-yet-visited indices.
+        for (let i = chat.length - 1; i >= 0; i--) {
+            const message = chat[i];
+            const original = String(message?.mes ?? "");
+            if (original.indexOf("[") === -1) {
+                continue;
+            }
+            const filtered = stripStandaloneBrackets(original);
+            if (filtered === original) {
+                continue;
+            }
+            if (filtered.trim() === "") {
+                chat.splice(i, 1); // message was only meta tags
+            } else {
+                chat[i] = Object.assign({}, message, { mes: filtered }); // clone-on-write
+            }
+        }
     } catch (error) {
-        console.error("[NPC POV Memory] interceptor spike error", error);
+        console.error("[NPC POV Memory] interceptor filter error", error);
     }
 };
 
