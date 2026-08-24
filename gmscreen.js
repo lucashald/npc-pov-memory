@@ -79,3 +79,153 @@ export function gmscreenRole(character) {
     const role = character?.data?.extensions?.gmscreen_role;
     return role === "gm" || role === "npc" ? role : null;
 }
+
+// ============================================================
+// NPC-manager pure helpers (no SillyTavern imports; Node-testable)
+// ============================================================
+
+// Resolve which chat indices a bulk operation targets.
+// opts: { mode:'single'|'lastN'|'all'|'range', mesId?, n?, start?, end?,
+//         filter?:'all'|'ai'|'user', includeSystem?:boolean }
+export function resolveRewriteScope(chat, opts = {}) {
+    if (!Array.isArray(chat) || chat.length === 0) {
+        return [];
+    }
+    const filter = opts.filter || "all";
+    const includeSystem = Boolean(opts.includeSystem);
+
+    let candidates = [];
+    switch (opts.mode) {
+        case "single":
+            if (Number.isInteger(opts.mesId)) {
+                candidates = [opts.mesId];
+            }
+            break;
+        case "lastN": {
+            const n = Math.max(0, Math.trunc(opts.n) || 0);
+            for (let i = Math.max(0, chat.length - n); i < chat.length; i++) {
+                candidates.push(i);
+            }
+            break;
+        }
+        case "range": {
+            const start = Math.max(0, Math.trunc(opts.start) || 0);
+            const end = Math.min(chat.length - 1, Math.trunc(opts.end) || 0);
+            for (let i = start; i <= end; i++) {
+                candidates.push(i);
+            }
+            break;
+        }
+        case "all":
+        default:
+            for (let i = 0; i < chat.length; i++) {
+                candidates.push(i);
+            }
+            break;
+    }
+
+    return candidates.filter((i) => {
+        if (i < 0 || i >= chat.length) return false;
+        if (!includeSystem && chat[i].is_system === true) return false;
+        if (filter === "ai") return !chat[i].is_user;
+        if (filter === "user") return Boolean(chat[i].is_user);
+        return true;
+    });
+}
+
+// Default bulk-rewrite instruction when the user gives none: strip anywhere the
+// assistant speaks for / narrates / controls the user persona. {{user}} is
+// replaced with the persona name by buildRewritePrompt.
+export const DEFAULT_REWRITE_INSTRUCTION =
+    "Remove any portion of this message where the assistant speaks for, " +
+    "narrates the actions of, describes the inner thoughts or feelings of, or " +
+    "otherwise controls {{user}}. Delete those portions entirely; do not invent " +
+    "replacement content. Keep everything else exactly as written: other " +
+    "characters' dialogue, their actions, and narration of the environment. If a " +
+    "sentence mixes allowed content with content about {{user}}, keep only the " +
+    "allowed part. If nothing would remain, return an empty string.";
+
+// Build the {system, prompt} pair for rewriting one message.
+export function buildRewritePrompt({ messageText, instruction, userName } = {}) {
+    const resolved =
+        instruction && String(instruction).trim()
+            ? String(instruction).trim()
+            : DEFAULT_REWRITE_INSTRUCTION.replaceAll("{{user}}", userName || "the user");
+
+    const system =
+        "You are a careful copy editor revising one message from an existing " +
+        "roleplay transcript. Apply the instruction and return ONLY the resulting " +
+        "message text: no preamble, no explanation, no quotes, no code fences. " +
+        "Preserve the original voice, tense, and markdown/asterisk formatting. " +
+        "Change only what the instruction requires; leave everything else verbatim.";
+
+    const prompt =
+        `Instruction: ${resolved}\n\n` +
+        `Message to edit:\n"""\n${String(messageText ?? "")}\n"""\n\n` +
+        "Rewritten message:";
+
+    return { system, prompt };
+}
+
+// Strip wrapping code fences / quotes the model may add around a rewrite.
+// (Reasoning-block removal is applied by the caller via ST's removeReasoningFromString.)
+export function cleanRewriteOutput(raw) {
+    if (raw == null) {
+        return "";
+    }
+    let text = String(raw).trim();
+    const fence = text.match(/^```[^\n]*\n([\s\S]*?)\n```$/);
+    if (fence) {
+        text = fence[1].trim();
+    }
+    if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+        text = text.slice(1, -1);
+    }
+    return text.trim();
+}
+
+// Collect images that appear in a chat (SD-generated or attached), from each
+// message's extra.image and extra.image_swipes. Deduplicated, in chat order.
+export function collectChatImages(chat) {
+    if (!Array.isArray(chat)) {
+        return [];
+    }
+    const out = [];
+    const seen = new Set();
+    for (let i = 0; i < chat.length; i++) {
+        const extra = chat[i] && chat[i].extra;
+        if (!extra) continue;
+        const urls = [];
+        if (typeof extra.image === "string" && extra.image) {
+            urls.push(extra.image);
+        }
+        if (Array.isArray(extra.image_swipes)) {
+            for (const u of extra.image_swipes) {
+                if (typeof u === "string" && u) urls.push(u);
+            }
+        }
+        for (const url of urls) {
+            if (seen.has(url)) continue;
+            seen.add(url);
+            out.push({ url, messageIndex: i, name: (chat[i] && chat[i].name) || "" });
+        }
+    }
+    return out;
+}
+
+// Plan a persisted bracket-strip pass over a chat. Returns a list of
+// { index, newText, remove } where remove:true means the message became empty.
+export function planBracketStrip(chat) {
+    if (!Array.isArray(chat)) {
+        return [];
+    }
+    const changes = [];
+    for (let i = 0; i < chat.length; i++) {
+        const original = String(chat[i] && chat[i].mes != null ? chat[i].mes : "");
+        if (original.indexOf("[") === -1) continue;
+        const stripped = stripStandaloneBrackets(original);
+        if (stripped === original) continue;
+        changes.push({ index: i, newText: stripped, remove: stripped.trim() === "" });
+    }
+    return changes;
+}

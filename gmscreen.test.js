@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { stripStandaloneBrackets, extractFirstJsonObject } from "./gmscreen.js";
+import {
+    stripStandaloneBrackets,
+    extractFirstJsonObject,
+    resolveRewriteScope,
+    buildRewritePrompt,
+    cleanRewriteOutput,
+    collectChatImages,
+    planBracketStrip,
+    DEFAULT_REWRITE_INSTRUCTION,
+} from "./gmscreen.js";
 
 test("strips a trailing tag but keeps the sentence", () => {
     assert.equal(
@@ -114,4 +123,117 @@ test("extractFirstJsonObject: reconstructs from a prefill-style prepend", () => 
     const parsed = JSON.parse(extractFirstJsonObject(prefill + modelReply));
     assert.equal(parsed.autobiography, "Bob is wary.");
     assert.equal(parsed.goals, "gain trust");
+});
+
+// ---- resolveRewriteScope ----
+const scopeChat = [
+    { is_user: true },                    // 0
+    { is_user: false },                   // 1
+    { is_user: true },                    // 2
+    { is_user: false },                   // 3
+    { is_user: false, is_system: true },  // 4
+    { is_user: false },                   // 5
+];
+
+test("resolveRewriteScope: single passes filter", () => {
+    assert.deepEqual(resolveRewriteScope(scopeChat, { mode: "single", mesId: 3, filter: "ai" }), [3]);
+});
+
+test("resolveRewriteScope: single blocked by filter", () => {
+    assert.deepEqual(resolveRewriteScope(scopeChat, { mode: "single", mesId: 0, filter: "ai" }), []);
+});
+
+test("resolveRewriteScope: lastN then filter, drops system", () => {
+    assert.deepEqual(resolveRewriteScope(scopeChat, { mode: "lastN", n: 3, filter: "ai" }), [3, 5]);
+});
+
+test("resolveRewriteScope: all + ai excludes user and system", () => {
+    assert.deepEqual(resolveRewriteScope(scopeChat, { mode: "all", filter: "ai" }), [1, 3, 5]);
+});
+
+test("resolveRewriteScope: all + user", () => {
+    assert.deepEqual(resolveRewriteScope(scopeChat, { mode: "all", filter: "user" }), [0, 2]);
+});
+
+test("resolveRewriteScope: range inclusive, filtered", () => {
+    assert.deepEqual(resolveRewriteScope(scopeChat, { mode: "range", start: 1, end: 4, filter: "all" }), [1, 2, 3]);
+});
+
+test("resolveRewriteScope: includeSystem keeps system", () => {
+    assert.deepEqual(resolveRewriteScope(scopeChat, { mode: "all", filter: "ai", includeSystem: true }), [1, 3, 4, 5]);
+});
+
+test("resolveRewriteScope: empty chat", () => {
+    assert.deepEqual(resolveRewriteScope([], { mode: "all" }), []);
+});
+
+// ---- buildRewritePrompt ----
+test("buildRewritePrompt: uses explicit instruction", () => {
+    const { prompt } = buildRewritePrompt({ messageText: "Bob lived.", instruction: "Kill Bob." });
+    assert.ok(prompt.includes("Kill Bob."));
+    assert.ok(prompt.includes("Bob lived."));
+});
+
+test("buildRewritePrompt: default instruction substitutes persona name", () => {
+    const { prompt } = buildRewritePrompt({ messageText: "x", instruction: "  ", userName: "Cara" });
+    assert.ok(prompt.includes("Cara"));
+    assert.ok(!prompt.includes("{{user}}"));
+});
+
+test("buildRewritePrompt: default template carries the token", () => {
+    assert.ok(DEFAULT_REWRITE_INSTRUCTION.includes("{{user}}"));
+});
+
+test("buildRewritePrompt: system says output only", () => {
+    const { system } = buildRewritePrompt({ messageText: "x", instruction: "y" });
+    assert.ok(/only/i.test(system));
+});
+
+// ---- cleanRewriteOutput ----
+test("cleanRewriteOutput: strips a wrapping fence", () => {
+    assert.equal(cleanRewriteOutput("```\nHello world\n```"), "Hello world");
+});
+
+test("cleanRewriteOutput: strips wrapping quotes", () => {
+    assert.equal(cleanRewriteOutput('"just this"'), "just this");
+});
+
+test("cleanRewriteOutput: passes plain text through trimmed", () => {
+    assert.equal(cleanRewriteOutput("  kept  "), "kept");
+});
+
+// ---- collectChatImages ----
+test("collectChatImages: gathers image and image_swipes, deduped, in order", () => {
+    const chat = [
+        { name: "Bob", extra: { image: "a.png" } },
+        { name: "Alice", extra: {} },
+        { name: "Bob", extra: { image: "a.png", image_swipes: ["a.png", "b.png"] } },
+        { name: "Cara", extra: { image_swipes: ["c.png"] } },
+    ];
+    assert.deepEqual(collectChatImages(chat), [
+        { url: "a.png", messageIndex: 0, name: "Bob" },
+        { url: "b.png", messageIndex: 2, name: "Bob" },
+        { url: "c.png", messageIndex: 3, name: "Cara" },
+    ]);
+});
+
+test("collectChatImages: no images", () => {
+    assert.deepEqual(collectChatImages([{ mes: "hi" }]), []);
+});
+
+// ---- planBracketStrip ----
+test("planBracketStrip: flags trailing-tag and whole-line-tag messages", () => {
+    const chat = [
+        { mes: "The lock opens. [ITEM GAINED: rope]" },
+        { mes: "plain text, nothing to do" },
+        { mes: "[System: They SUCCEEDED.]" },
+    ];
+    assert.deepEqual(planBracketStrip(chat), [
+        { index: 0, newText: "The lock opens.", remove: false },
+        { index: 2, newText: "", remove: true },
+    ]);
+});
+
+test("planBracketStrip: skips messages without brackets", () => {
+    assert.deepEqual(planBracketStrip([{ mes: "no brackets here" }]), []);
 });
