@@ -132,3 +132,33 @@ test("stableSeedFrom: returns an unsigned 32-bit integer", () => {
     const seed = stableSeedFrom("cara.png");
     assert.ok(Number.isInteger(seed) && seed >= 0 && seed < 2 ** 32);
 });
+
+// ---- unbalanced quotes (regression: inverted strip) ----
+
+test("stripDialogue: a stray leading quote does not invert the strip", () => {
+    const input = '"Hello there. She walks to the window, arms folded. "It is cold," she says.';
+    const out = stripDialogue(input);
+    assert.ok(out.includes("She walks to the window"), `narration was dropped: ${out}`);
+});
+
+test("stripDialogue: odd quote count keeps all words rather than guessing", () => {
+    const input = 'She sets down the mug. "Careful, it is hot.';
+    const out = stripDialogue(input);
+    assert.ok(out.includes("She sets down the mug."));
+    assert.ok(!out.includes('"'));
+});
+
+test("stripDialogue: empty quote pair at the start is harmless", () => {
+    const input = '"" She leans against the doorway. "Go on," he says.';
+    const out = stripDialogue(input);
+    assert.ok(out.includes("She leans against the doorway"), out);
+    assert.ok(!out.includes("Go on"), out);
+});
+
+test("stripDialogue: balanced quotes still strip normally", () => {
+    const input = 'She wipes her hands. "It will hold." The lamp flickers.';
+    const out = stripDialogue(input);
+    assert.ok(!out.includes("It will hold"));
+    assert.ok(out.includes("She wipes her hands."));
+    assert.ok(out.includes("The lamp flickers."));
+});

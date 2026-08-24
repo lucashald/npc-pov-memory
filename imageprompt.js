@@ -43,7 +43,38 @@ export function stripDialogue(text) {
         return collapse(asteriskSpans.join(" "));
     }
 
-    return collapse(input.replace(QUOTED_SPEECH, " "));
+    return collapse(removeQuotedSpeech(input));
+}
+
+/**
+ * Remove quoted speech, but only when the quoting is unambiguous.
+ *
+ * Straight quotes carry no direction, so pairing them depends entirely on
+ * their count being even. One stray quote (a message that opens with one and
+ * never closes it, say) shifts every pair by one, which inverts the result:
+ * the narration gets deleted and only the dialogue survives. That is far worse
+ * than doing nothing, because the image model then receives speech and no
+ * description at all.
+ *
+ * So: strip empty pairs first, and if an odd number of straight quotes remains
+ * the text is malformed and unparseable. In that case drop the quote
+ * characters and keep every word. The cost is a little dialogue leaking into
+ * the prompt; the alternative is losing the entire scene description.
+ */
+function removeQuotedSpeech(input) {
+    // Empty pairs ("") carry no speech and would otherwise skew the parity.
+    let text = input.replace(/""/g, " ").replace(/[“”]{2}/g, " ");
+
+    const straightQuotes = (text.match(/"/g) || []).length;
+    if (straightQuotes % 2 !== 0) {
+        return text.replace(/["“”]/g, " ");
+    }
+
+    const stripped = text.replace(QUOTED_SPEECH, " ");
+
+    // A message that is nothing but dialogue legitimately strips to nothing;
+    // that is handled by the caller, which skips messages with no narration.
+    return stripped;
 }
 
 function collapse(text) {
