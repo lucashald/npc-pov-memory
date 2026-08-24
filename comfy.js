@@ -55,8 +55,10 @@ export async function loadWorkflow(name) {
  * Substitute the %placeholders% a workflow declares.
  *
  * Only tokens actually present in the file are replaced, so a workflow
- * without %negative_prompt% (Krea2_Turbo.json, for one) is left alone
- * rather than silently gaining an unused field.
+ * without %negative_prompt% is left alone rather than silently gaining an
+ * unused field. Krea2_Turbo.json is deliberately one of those: Krea 2 does
+ * not generally want a negative prompt, so the placeholder is absent on
+ * purpose and should not be "fixed" by adding it back.
  */
 export function applyWorkflowSubstitutions(workflowText, values) {
     let text = String(workflowText);
