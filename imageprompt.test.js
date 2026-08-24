@@ -9,12 +9,12 @@ import {
 
 // ---- stripDialogue ----
 
-test("stripDialogue: keeps asterisk narration and drops bare speech", () => {
+test("stripDialogue: strips asterisk markers but keeps every word they wrapped", () => {
     const input = '*She leans against the fuselage, arms folded.* You\'re late, again.';
-    assert.equal(stripDialogue(input), "She leans against the fuselage, arms folded.");
+    assert.equal(stripDialogue(input), "She leans against the fuselage, arms folded. You're late, again.");
 });
 
-test("stripDialogue: joins multiple asterisk spans", () => {
+test("stripDialogue: removes quoted speech regardless of surrounding asterisks", () => {
     const input = '*He sets down the crate.* "Careful." *Dust rises around his boots.*';
     assert.equal(stripDialogue(input), "He sets down the crate. Dust rises around his boots.");
 });
@@ -189,8 +189,10 @@ test("stripDialogue: keeps narration when asterisks wrap a short quoted message"
     assert.ok(out.includes("The next message arrives with a photo attached"), out);
 });
 
-test("stripDialogue: still treats asterisks as actions when they dominate", () => {
-    const input = "*She leans against the fuselage, arms folded, watching the horizon.* You are late.";
-    const out = stripDialogue(input);
-    assert.equal(out, "She leans against the fuselage, arms folded, watching the horizon.");
+test("stripDialogue: asterisks never decide what is kept, whatever their share", () => {
+    // Same words, opposite asterisk usage: both keep all the prose.
+    const mostlyWrapped = "*She leans against the fuselage, watching the horizon.* You are late.";
+    const barelyWrapped = "She leans against the fuselage, watching the horizon. *You* are late.";
+    assert.equal(stripDialogue(mostlyWrapped), "She leans against the fuselage, watching the horizon. You are late.");
+    assert.equal(stripDialogue(barelyWrapped), "She leans against the fuselage, watching the horizon. You are late.");
 });
