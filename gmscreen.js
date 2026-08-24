@@ -184,8 +184,13 @@ export function cleanRewriteOutput(raw) {
     return text.trim();
 }
 
-// Collect images that appear in a chat (SD-generated or attached), from each
-// message's extra.image and extra.image_swipes. Deduplicated, in chat order.
+// Collect images that appear in a chat (generated or attached).
+//
+// Current SillyTavern stores attachments in extra.media[] as
+// { type, url, ... } and migrates the legacy extra.image / extra.image_swipes
+// fields into it on load, deleting the originals. Read media[] first and keep
+// the legacy fields only as a fallback for chats that have not been migrated.
+// Deduplicated, in chat order.
 export function collectChatImages(chat) {
     if (!Array.isArray(chat)) {
         return [];
@@ -196,6 +201,18 @@ export function collectChatImages(chat) {
         const extra = chat[i] && chat[i].extra;
         if (!extra) continue;
         const urls = [];
+
+        if (Array.isArray(extra.media)) {
+            for (const item of extra.media) {
+                // type is absent on some older entries; treat those as images.
+                if (item && typeof item.url === "string" && item.url
+                    && (item.type === undefined || item.type === "image")) {
+                    urls.push(item.url);
+                }
+            }
+        }
+
+        // Legacy fallback.
         if (typeof extra.image === "string" && extra.image) {
             urls.push(extra.image);
         }
@@ -204,6 +221,7 @@ export function collectChatImages(chat) {
                 if (typeof u === "string" && u) urls.push(u);
             }
         }
+
         for (const url of urls) {
             if (seen.has(url)) continue;
             seen.add(url);

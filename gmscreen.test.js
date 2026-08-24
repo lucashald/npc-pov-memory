@@ -237,3 +237,23 @@ test("planBracketStrip: flags trailing-tag and whole-line-tag messages", () => {
 test("planBracketStrip: skips messages without brackets", () => {
     assert.deepEqual(planBracketStrip([{ mes: "no brackets here" }]), []);
 });
+
+test("collectChatImages: reads extra.media[] (current ST format)", () => {
+    const chat = [
+        { name: "Bob", extra: { media: [{ type: "image", url: "m1.png" }] } },
+        { name: "Alice", extra: { media: [{ type: "video", url: "clip.mp4" }] } },
+        { name: "Cara", extra: { media: [{ url: "m2.png" }, { type: "image", url: "m1.png" }] } },
+    ];
+    assert.deepEqual(collectChatImages(chat), [
+        { url: "m1.png", messageIndex: 0, name: "Bob" },
+        { url: "m2.png", messageIndex: 2, name: "Cara" },
+    ]);
+});
+
+test("collectChatImages: still handles legacy fields", () => {
+    const chat = [{ name: "Bob", extra: { image: "old.png", image_swipes: ["old.png", "old2.png"] } }];
+    assert.deepEqual(collectChatImages(chat), [
+        { url: "old.png", messageIndex: 0, name: "Bob" },
+        { url: "old2.png", messageIndex: 0, name: "Bob" },
+    ]);
+});
