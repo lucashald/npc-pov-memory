@@ -194,8 +194,12 @@ export const DEFAULT_TAGGER_SYSTEM = [
     "object alone.",
     "",
     "Describe only what the camera captures, and give it a clear framing and lens",
-    "feel. Omit thoughts, feelings, dialogue, sounds, smells, and anything",
-    "abstract. Do not render text, labels, room numbers, or signage into the shot.",
+    "feel. Include only the settings, objects, and people the SCENE actually",
+    "mentions; do not invent architecture, artwork, furniture, props, or effects",
+    "that are not there, and do not embellish with metaphor or evocative imagery.",
+    "Omit thoughts, feelings, dialogue, sounds, smells, and anything abstract. Do",
+    "not begin with a point of view or camera-position label; start directly with",
+    "the shot. Do not render text, labels, room numbers, or signage into it.",
 ].join("\n");
 
 /**
