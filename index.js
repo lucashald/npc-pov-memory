@@ -13,7 +13,7 @@ import {
     groups,
     selected_group,
 } from "../../../group-chats.js";
-import { gmscreenRole, stripStandaloneBrackets } from "./gmscreen.js";
+import { gmscreenRole, stripStandaloneBrackets, extractFirstJsonObject } from "./gmscreen.js";
 
 const EXTENSION_KEY = "npc-pov-memory";
 const STORAGE_KEY = "npcPovMemory";
@@ -365,9 +365,7 @@ function buildUpdateUserPrompt(character, persona, store, relationship, messages
 function parseJsonResponse(text) {
     const cleaned = removeReasoningFromString(String(text || "")).trim();
     const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i);
-    const candidate = fenced
-        ? fenced[1].trim()
-        : cleaned.slice(cleaned.indexOf("{"), cleaned.lastIndexOf("}") + 1);
+    const candidate = extractFirstJsonObject(fenced ? fenced[1] : cleaned);
 
     if (!candidate) {
         throw new Error("The model did not return a JSON object.");
@@ -387,13 +385,19 @@ async function generateMemoryUpdate(systemPrompt, userPrompt) {
     const settings = getSettings();
     const responseLength = clampNumber(settings.responseLength, 100, 4000, DEFAULT_SETTINGS.responseLength);
 
+    // Text-completion backends continue the transcript instead of obeying
+    // "return JSON only", so seed the reply with the opening of the JSON
+    // object. The response omits the prefill, so prepend it before parsing.
+    const JSON_PREFILL = '{\n"autobiography": "';
+
     if (typeof context.generateRaw === "function") {
         const raw = await context.generateRaw({
             prompt: userPrompt,
             systemPrompt,
             responseLength,
+            prefill: JSON_PREFILL,
         });
-        return parseJsonResponse(raw);
+        return parseJsonResponse(JSON_PREFILL + raw);
     }
 
     if (typeof context.generateQuietPrompt === "function") {
