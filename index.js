@@ -1,6 +1,7 @@
 import { extension_settings, getContext } from "../../../extensions.js";
 import {
     Generate,
+    appendMediaToMessage,
     default_avatar,
     extension_prompt_roles,
     extension_prompt_types,
@@ -8,6 +9,16 @@ import {
     getThumbnailUrl,
     updateMessageBlock,
 } from "../../../../script.js";
+import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE } from "../../../constants.js";
+import { saveBase64AsFile } from "../../../utils.js";
+import { humanizedDateTime } from "../../../RossAscends-mods.js";
+import { enqueueRender, getQueueDepth, renderImage } from "./comfy.js";
+import {
+    composeImagePrompt,
+    findMentionedCharacters,
+    stableSeedFrom,
+    stripDialogue,
+} from "./imageprompt.js";
 import { removeReasoningFromString } from "../../../reasoning.js";
 import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from "../../../popup.js";
 import {
@@ -43,6 +54,19 @@ const DEFAULT_SETTINGS = {
     // and the update call does not spend tokens on it.
     trackAppearance: false,
     includeAppearance: false,
+    // Image generation. Off by default; the separate async-comfy-images
+    // extension covers the tagger-based path, so both can be compared.
+    imagesEnabled: false,
+    imagesAuto: false,
+    imageComfyUrl: "http://127.0.0.1:8188",
+    imageWorkflow: "Krea2_Turbo.json",
+    imageSteps: 8,
+    imageWidth: 832,
+    imageHeight: 1216,
+    imageStyleSuffix: "",
+    // "character" reuses one seed per card so a character renders
+    // consistently; "random" varies every time.
+    imageSeedMode: "character",
     filterMetaForNpcs: true,
     treatUnmarkedAsNpc: false,
     updateInterval: 8,
@@ -796,6 +820,50 @@ function createSettingsPanel() {
                                 </label>
                             </div>
                         </div>
+                        <label class="checkbox_label">
+                            <input id="npc-pov-memory-images-enabled" type="checkbox">
+                            <span>Enable image generation (ComfyUI)</span>
+                        </label>
+                        <label class="checkbox_label">
+                            <input id="npc-pov-memory-images-auto" type="checkbox">
+                            <span>Auto-generate after each character message</span>
+                        </label>
+                        <div class="npc-pov-memory-image-settings">
+                            <label>
+                                <span>ComfyUI URL</span>
+                                <input id="npc-pov-memory-image-url" class="text_pole" type="text">
+                            </label>
+                            <label>
+                                <span>Workflow file</span>
+                                <input id="npc-pov-memory-image-workflow" class="text_pole" type="text">
+                            </label>
+                            <label>
+                                <span>Seed</span>
+                                <select id="npc-pov-memory-image-seed-mode" class="text_pole">
+                                    <option value="character">Consistent per character</option>
+                                    <option value="random">Random every time</option>
+                                </select>
+                            </label>
+                            <div class="npc-pov-memory-grid">
+                                <label>
+                                    <span>Width</span>
+                                    <input id="npc-pov-memory-image-width" class="text_pole" type="number" min="256" max="2048" step="64">
+                                </label>
+                                <label>
+                                    <span>Height</span>
+                                    <input id="npc-pov-memory-image-height" class="text_pole" type="number" min="256" max="2048" step="64">
+                                </label>
+                                <label>
+                                    <span>Steps</span>
+                                    <input id="npc-pov-memory-image-steps" class="text_pole" type="number" min="1" max="60">
+                                </label>
+                            </div>
+                            <label>
+                                <span>Style suffix (appended to every prompt)</span>
+                                <textarea id="npc-pov-memory-image-style" class="text_pole" rows="2"
+                                    placeholder="e.g. Shot on 35mm, shallow depth of field."></textarea>
+                            </label>
+                        </div>
                         <div class="npc-pov-memory-grid">
                             <label>
                                 <span>Update every</span>
@@ -903,6 +971,55 @@ function bindSettingsPanel() {
         getSettings().includeAppearance = Boolean($(this).prop("checked"));
         saveSettings();
         setInjectedMemory();
+    });
+
+    $("#npc-pov-memory-images-enabled").on("change", function () {
+        getSettings().imagesEnabled = Boolean($(this).prop("checked"));
+        saveSettings();
+        refreshSettingsPanel();
+    });
+
+    $("#npc-pov-memory-images-auto").on("change", function () {
+        getSettings().imagesAuto = Boolean($(this).prop("checked"));
+        saveSettings();
+    });
+
+    $("#npc-pov-memory-image-url").on("change", function () {
+        getSettings().imageComfyUrl = String($(this).val() || "").trim();
+        saveSettings();
+    });
+
+    $("#npc-pov-memory-image-workflow").on("change", function () {
+        getSettings().imageWorkflow = String($(this).val() || "").trim();
+        saveSettings();
+    });
+
+    $("#npc-pov-memory-image-seed-mode").on("change", function () {
+        getSettings().imageSeedMode = $(this).val() === "random" ? "random" : "character";
+        saveSettings();
+    });
+
+    $("#npc-pov-memory-image-width").on("change", function () {
+        getSettings().imageWidth = clampNumber($(this).val(), 256, 2048, DEFAULT_SETTINGS.imageWidth);
+        saveSettings();
+        refreshSettingsPanel();
+    });
+
+    $("#npc-pov-memory-image-height").on("change", function () {
+        getSettings().imageHeight = clampNumber($(this).val(), 256, 2048, DEFAULT_SETTINGS.imageHeight);
+        saveSettings();
+        refreshSettingsPanel();
+    });
+
+    $("#npc-pov-memory-image-steps").on("change", function () {
+        getSettings().imageSteps = clampNumber($(this).val(), 1, 60, DEFAULT_SETTINGS.imageSteps);
+        saveSettings();
+        refreshSettingsPanel();
+    });
+
+    $("#npc-pov-memory-image-style").on("change", function () {
+        getSettings().imageStyleSuffix = String($(this).val() || "").trim();
+        saveSettings();
     });
 
     $("#npc-pov-memory-filter-meta").on("change", function () {
@@ -1316,6 +1433,20 @@ function refreshSettingsPanel() {
     $("#npc-pov-memory-show-speaker-buttons").prop("checked", settings.showGroupSpeakerButtons);
     $("#npc-pov-memory-focus-clear-strategy").val(String(settings.focusClearStrategy));
     $("#npc-pov-memory-include-goals").prop("checked", settings.includeGoals);
+    $("#npc-pov-memory-images-enabled").prop("checked", settings.imagesEnabled);
+    $("#npc-pov-memory-images-auto")
+        .prop("checked", settings.imagesAuto)
+        .prop("disabled", !settings.imagesEnabled);
+    $("#npc-pov-memory-image-url").val(settings.imageComfyUrl);
+    $("#npc-pov-memory-image-workflow").val(settings.imageWorkflow);
+    $("#npc-pov-memory-image-seed-mode").val(settings.imageSeedMode);
+    $("#npc-pov-memory-image-width").val(settings.imageWidth);
+    $("#npc-pov-memory-image-height").val(settings.imageHeight);
+    $("#npc-pov-memory-image-steps").val(settings.imageSteps);
+    if (!$("#npc-pov-memory-image-style").is(":focus")) {
+        $("#npc-pov-memory-image-style").val(settings.imageStyleSuffix);
+    }
+    $(".npc-pov-memory-image-settings").toggle(Boolean(settings.imagesEnabled));
     $("#npc-pov-memory-track-appearance").prop("checked", settings.trackAppearance);
     $("#npc-pov-memory-include-appearance")
         .prop("checked", settings.includeAppearance)
@@ -1429,6 +1560,7 @@ function registerEvents() {
     });
 
     source.on(events.CHARACTER_MESSAGE_RENDERED, onCharacterMessageRendered);
+    source.on(events.CHARACTER_MESSAGE_RENDERED, onMessageForImage);
     if (events.MESSAGE_SENT) {
         source.on(events.MESSAGE_SENT, queueFocusedSpeakerReply);
     }
@@ -2178,6 +2310,11 @@ function buildNpcMenuItems(characterId) {
             action: () => toggleFocusedSpeaker(Number(characterId)),
         },
         {
+            label: "Generate image",
+            disabled: !getSettings().imagesEnabled,
+            action: () => generateImageFor(characterId),
+        },
+        {
             label: "Set portrait from chat image",
             submenu: buildPortraitSubmenu(characterId, rootItems),
         },
@@ -2265,4 +2402,208 @@ function openNpcContextMenu(characterId, x, y) {
             closeNpcContextMenu();
         }
     });
+}
+
+// ============================================================
+// Image generation (raw narration + stored appearance)
+//
+// Deliberately does NOT run the message through a tagger LLM. Krea 2's
+// encoder reads prose directly, and it is no better or worse than a tagger
+// at inventing framing and lighting the transcript never stated, so the
+// extra hop only adds latency and a place to lose detail. What the tagger
+// cannot supply and this can: the character's stored appearance, which is
+// stable across renders and changes only when the story changes it.
+// ============================================================
+
+/** Resolve the message this render should illustrate. */
+function findIllustratableMessage(context, messageIndex) {
+    const chat = context.chat || [];
+    if (Number.isInteger(messageIndex) && chat[messageIndex]) {
+        return chat[messageIndex];
+    }
+    return [...chat].reverse().find(message => message && !message.is_user && !message.is_system) || null;
+}
+
+/**
+ * Work out who should be in frame: the subject, plus any other group member
+ * named in the narration. Returns [{ name, text }] for composeImagePrompt,
+ * with characters that have no stored appearance included as empty entries
+ * (composeImagePrompt drops them).
+ */
+function collectAppearances(subjectId, narration, context) {
+    const entries = [];
+    const seen = new Set();
+
+    const push = (characterId) => {
+        const character = getCharacterById(characterId, context);
+        if (!character || seen.has(character.avatar)) {
+            return;
+        }
+        seen.add(character.avatar);
+        entries.push({
+            name: character.name || "",
+            text: readStore(character).appearance.text || "",
+        });
+    };
+
+    push(subjectId);
+
+    const members = getGroupMemberCharacters(context);
+    if (members.length) {
+        const names = members.map(member => member.character?.name).filter(Boolean);
+        const mentioned = findMentionedCharacters(narration, names);
+        for (const name of mentioned) {
+            const member = members.find(item => item.character?.name === name);
+            if (member) {
+                push(member.id);
+            }
+        }
+    }
+
+    return entries;
+}
+
+/** Build the prose prompt for one render, or "" if there is nothing to draw. */
+function buildImagePromptFor(characterId, message, context = getContext()) {
+    const settings = getSettings();
+    // Meta/GM bracket tags are instructions, not things a camera can see.
+    const narration = stripDialogue(stripStandaloneBrackets(String(message?.mes ?? "")));
+    if (!narration) {
+        return "";
+    }
+
+    return composeImagePrompt({
+        appearances: collectAppearances(characterId, narration, context),
+        narration,
+        styleSuffix: settings.imageStyleSuffix,
+    });
+}
+
+/**
+ * Attach a finished image to a message.
+ *
+ * The message is located by identity rather than by index, because the user
+ * may have sent several more messages while the render was queued. Writes
+ * extra.media[], which is the current format; the legacy extra.image field is
+ * migrated away and silently dropped by SillyTavern.
+ */
+function attachImageToMessage(message, url, prompt) {
+    const context = getContext();
+    const index = context.chat.indexOf(message);
+    if (index === -1) {
+        return; // message was deleted, or the chat was switched
+    }
+
+    if (!message.extra) {
+        message.extra = {};
+    }
+    if (!Array.isArray(message.extra.media)) {
+        message.extra.media = [];
+    }
+    message.extra.media.push({
+        url,
+        type: MEDIA_TYPE.IMAGE,
+        title: prompt,
+        source: MEDIA_SOURCE.GENERATED,
+    });
+    message.extra.media_display = MEDIA_DISPLAY.GALLERY;
+    message.extra.media_index = message.extra.media.length - 1;
+    message.extra.title = prompt;
+
+    const element = document.querySelector(`#chat .mes[mesid="${index}"]`);
+    if (element) {
+        appendMediaToMessage(message, $(element));
+    }
+    context.saveChat();
+}
+
+/**
+ * Generate an illustration of `characterId` in the scene described by a
+ * message. Never awaited by callers that must stay responsive; the render
+ * itself is serialised by comfy.js's queue.
+ */
+async function generateImageFor(characterId, { messageIndex = null, silent = false } = {}) {
+    const settings = getSettings();
+    if (!settings.imagesEnabled) {
+        if (!silent) {
+            toastr.warning("Image generation is turned off in NPC POV Memory settings.");
+        }
+        return;
+    }
+
+    const context = getContext();
+    const character = getCharacterById(characterId, context);
+    const message = findIllustratableMessage(context, messageIndex);
+    if (!character || !message) {
+        if (!silent) {
+            toastr.warning("Nothing to illustrate yet.");
+        }
+        return;
+    }
+
+    const prompt = buildImagePromptFor(characterId, message, context);
+    if (!prompt) {
+        if (!silent) {
+            toastr.info("That message has no visual narration to draw.");
+        }
+        return;
+    }
+
+    const seed = settings.imageSeedMode === "character"
+        ? stableSeedFrom(character.avatar || character.name || "")
+        : Math.floor(Math.random() * 2 ** 32);
+
+    const queued = getQueueDepth();
+    if (!silent) {
+        toastr.info(
+            queued ? `Queued behind ${queued} render${queued === 1 ? "" : "s"}.` : "Generating…",
+            `Image: ${character.name}`,
+        );
+    }
+    console.debug(`[NPC POV Memory] image prompt for ${character.name}:`, prompt);
+
+    try {
+        const result = await enqueueRender(() => renderImage({
+            comfyUrl: settings.imageComfyUrl,
+            workflow: settings.imageWorkflow,
+            prompt,
+            seed,
+            steps: clampNumber(settings.imageSteps, 1, 60, DEFAULT_SETTINGS.imageSteps),
+            width: clampNumber(settings.imageWidth, 256, 2048, DEFAULT_SETTINGS.imageWidth),
+            height: clampNumber(settings.imageHeight, 256, 2048, DEFAULT_SETTINGS.imageHeight),
+        }));
+
+        const url = await saveBase64AsFile(
+            result.data,
+            character.name || "image",
+            humanizedDateTime(),
+            result.format,
+        );
+        attachImageToMessage(message, url, prompt);
+    } catch (error) {
+        console.error("[NPC POV Memory] Image generation failed", error);
+        toastr.error(String(error.message ?? error), "Image generation failed");
+    }
+}
+
+/** Auto-generate after a character message, when enabled. */
+function onMessageForImage(messageId) {
+    const settings = getSettings();
+    if (!settings.imagesEnabled || !settings.imagesAuto) {
+        return;
+    }
+
+    const context = getContext();
+    const message = context.chat?.[messageId];
+    if (!message || message.is_user || message.is_system) {
+        return;
+    }
+
+    const characterId = findCharacterIdForMessage(message, context);
+    if (characterId === null) {
+        return;
+    }
+
+    // Not awaited: the event handler returns immediately and chat stays usable.
+    generateImageFor(characterId, { messageIndex: Number(messageId), silent: true });
 }

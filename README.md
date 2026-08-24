@@ -66,3 +66,38 @@ fifth stored field alongside autobiography, relationship, secrets, and goals.
 The field is written as plain visual prose so an image generator can consume it
 directly. Turning tracking off leaves stored text untouched and removes
 appearance from the update call entirely.
+
+## Image generation (ComfyUI)
+
+Off by default, behind **Enable image generation**. This is the raw-narration
+path, built to be compared against the tagger-based `async-comfy-images`
+extension: run one or the other, not both on auto at once.
+
+Instead of asking a tagger LLM to rewrite the message into a prompt, it sends
+Krea 2 the narration itself, prefixed by the stored **appearance** of whoever is
+in frame. Krea 2's encoder reads prose directly, and a tagger is no better at
+inventing framing or lighting the transcript never stated, so the extra hop only
+adds latency. What the tagger cannot supply is a description that stays stable
+across renders and changes only when the story changes it.
+
+How a prompt is built:
+
+1. GM/meta bracket tags are stripped, then dialogue is removed. Messages using
+   `*asterisks*` keep only those spans; otherwise quoted speech is dropped.
+2. Subjects are the right-clicked character plus any other group member named in
+   the remaining narration (exact whole-word match, which is why cards should use
+   single first names).
+3. Each subject's stored appearance is prepended. One subject uses its
+   description verbatim; several are name-prefixed. Characters with no stored
+   appearance contribute nothing.
+4. An optional style suffix is appended.
+
+Renders go through SillyTavern's ComfyUI proxy and a **single-flight queue**, so
+overlapping requests wait rather than thrashing VRAM. Seeds default to one
+stable value per character, so the same card renders consistently; switch to
+random for variety. Finished images attach to the originating message, located
+by identity so a queued render still lands correctly after you have kept
+chatting.
+
+Trigger it from **Generate image** in the portrait right-click menu, or turn on
+**Auto-generate after each character message**.

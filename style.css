@@ -324,3 +324,25 @@
         grid-template-columns: 1fr;
     }
 }
+
+#npc-pov-memory-settings .npc-pov-memory-image-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    background: var(--black30a);
+}
+
+#npc-pov-memory-settings .npc-pov-memory-image-settings > label {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    align-items: center;
+    gap: 8px;
+}
+
+#npc-pov-memory-settings .npc-pov-memory-image-settings textarea {
+    width: 100%;
+    resize: vertical;
+}
