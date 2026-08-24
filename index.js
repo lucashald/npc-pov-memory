@@ -74,7 +74,10 @@ const DEFAULT_SETTINGS = {
     // photographic description using the stored appearance; "raw" sends the
     // narration straight to the image model (kept for comparison).
     imagePromptMode: "tagger",
-    taggerSource: "endpoint",
+    // Default to the main chat model so the tagger works with no extra server.
+    // Switch to "endpoint" (in the panel) to keep tagging off the generation
+    // lock via a separate OpenAI-compatible server.
+    taggerSource: "main",
     taggerUrl: "http://100.109.251.18:1234/v1/chat/completions",
     taggerModel: "",
     taggerMaxTokens: 1000,
