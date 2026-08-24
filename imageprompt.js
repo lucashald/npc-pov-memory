@@ -187,10 +187,17 @@ const TAGGER_SYSTEM = [
     "is doing what, their pose and expression, the setting, the time of day, and",
     "the quality and direction of the light.",
     "",
+    "The described character or characters ARE the subject of the photograph and",
+    "MUST appear in it, in the foreground, fully described from the APPEARANCE.",
+    "Even if the scene says a character leaves, is gone, or is out of view, show",
+    "them in the last moment they are present. Never return an empty room, a",
+    "still life, or a photograph of only an object; a person is always in frame.",
+    "",
     "Choose ONE clear moment and ONE camera framing (close-up, upper body,",
-    "full body, wide shot). Describe only what a camera would capture. Omit",
-    "thoughts, feelings, dialogue, sounds, smells, and anything abstract. Do not",
-    "write text, captions, labels, room numbers, or signage into the scene.",
+    "full body, wide shot) that centres the character. Describe only what a",
+    "camera would capture. Omit thoughts, feelings, dialogue, sounds, smells,",
+    "and anything abstract. Do not write text, captions, labels, room numbers,",
+    "or signage into the scene.",
 ].join("\n");
 
 /**
