@@ -14,11 +14,14 @@ import { saveBase64AsFile } from "../../../utils.js";
 import { humanizedDateTime } from "../../../RossAscends-mods.js";
 import { enqueueRender, getQueueDepth, renderImage } from "./comfy.js";
 import {
+    buildTaggerPrompt,
+    cleanTaggerOutput,
     composeImagePrompt,
     findMentionedCharacters,
     stableSeedFrom,
     stripDialogue,
 } from "./imageprompt.js";
+import { runTagger } from "./tagger.js";
 import { removeReasoningFromString } from "../../../reasoning.js";
 import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from "../../../popup.js";
 import {
@@ -67,6 +70,14 @@ const DEFAULT_SETTINGS = {
     // "character" reuses one seed per card so a character renders
     // consistently; "random" varies every time.
     imageSeedMode: "character",
+    // "tagger" runs the scene through an LLM that distills it into one
+    // photographic description using the stored appearance; "raw" sends the
+    // narration straight to the image model (kept for comparison).
+    imagePromptMode: "tagger",
+    taggerSource: "endpoint",
+    taggerUrl: "http://100.109.251.18:1234/v1/chat/completions",
+    taggerModel: "",
+    taggerMaxTokens: 1000,
     filterMetaForNpcs: true,
     treatUnmarkedAsNpc: false,
     updateInterval: 8,
@@ -830,6 +841,34 @@ function createSettingsPanel() {
                         </label>
                         <div class="npc-pov-memory-image-settings">
                             <label>
+                                <span>Prompt from</span>
+                                <select id="npc-pov-memory-prompt-mode" class="text_pole">
+                                    <option value="tagger">Tagger LLM (one photographic description)</option>
+                                    <option value="raw">Raw scene (appearance + narration)</option>
+                                </select>
+                            </label>
+                            <div class="npc-pov-memory-tagger-settings">
+                                <label>
+                                    <span>Tagger uses</span>
+                                    <select id="npc-pov-memory-tagger-source" class="text_pole">
+                                        <option value="endpoint">Separate endpoint (non-blocking)</option>
+                                        <option value="main">Main chat model (queues with chat)</option>
+                                    </select>
+                                </label>
+                                <label>
+                                    <span>Tagger endpoint</span>
+                                    <input id="npc-pov-memory-tagger-url" class="text_pole" type="text">
+                                </label>
+                                <label>
+                                    <span>Tagger model</span>
+                                    <input id="npc-pov-memory-tagger-model" class="text_pole" type="text">
+                                </label>
+                                <label>
+                                    <span>Tagger max tokens</span>
+                                    <input id="npc-pov-memory-tagger-max" class="text_pole" type="number" min="64" max="8192">
+                                </label>
+                            </div>
+                            <label>
                                 <span>ComfyUI URL</span>
                                 <input id="npc-pov-memory-image-url" class="text_pole" type="text">
                             </label>
@@ -981,6 +1020,32 @@ function bindSettingsPanel() {
 
     $("#npc-pov-memory-images-auto").on("change", function () {
         getSettings().imagesAuto = Boolean($(this).prop("checked"));
+        saveSettings();
+    });
+
+    $("#npc-pov-memory-prompt-mode").on("change", function () {
+        getSettings().imagePromptMode = $(this).val() === "raw" ? "raw" : "tagger";
+        saveSettings();
+        refreshSettingsPanel();
+    });
+
+    $("#npc-pov-memory-tagger-source").on("change", function () {
+        getSettings().taggerSource = $(this).val() === "main" ? "main" : "endpoint";
+        saveSettings();
+    });
+
+    $("#npc-pov-memory-tagger-url").on("change", function () {
+        getSettings().taggerUrl = String($(this).val() || "").trim();
+        saveSettings();
+    });
+
+    $("#npc-pov-memory-tagger-model").on("change", function () {
+        getSettings().taggerModel = String($(this).val() || "").trim();
+        saveSettings();
+    });
+
+    $("#npc-pov-memory-tagger-max").on("change", function () {
+        getSettings().taggerMaxTokens = clampNumber($(this).val(), 64, 8192, DEFAULT_SETTINGS.taggerMaxTokens);
         saveSettings();
     });
 
@@ -1437,6 +1502,12 @@ function refreshSettingsPanel() {
     $("#npc-pov-memory-images-auto")
         .prop("checked", settings.imagesAuto)
         .prop("disabled", !settings.imagesEnabled);
+    $("#npc-pov-memory-prompt-mode").val(settings.imagePromptMode);
+    $("#npc-pov-memory-tagger-source").val(settings.taggerSource);
+    $("#npc-pov-memory-tagger-url").val(settings.taggerUrl);
+    $("#npc-pov-memory-tagger-model").val(settings.taggerModel);
+    $("#npc-pov-memory-tagger-max").val(settings.taggerMaxTokens);
+    $(".npc-pov-memory-tagger-settings").toggle(settings.imagePromptMode !== "raw");
     $("#npc-pov-memory-image-url").val(settings.imageComfyUrl);
     $("#npc-pov-memory-image-workflow").val(settings.imageWorkflow);
     $("#npc-pov-memory-image-seed-mode").val(settings.imageSeedMode);
@@ -2464,7 +2535,7 @@ function collectAppearances(subjectId, narration, context) {
 }
 
 /** Build the prose prompt for one render, or "" if there is nothing to draw. */
-function buildImagePromptFor(characterId, message, context = getContext()) {
+async function buildImagePromptFor(characterId, message, context = getContext()) {
     const settings = getSettings();
     // Meta/GM bracket tags are instructions, not things a camera can see.
     const narration = stripDialogue(stripStandaloneBrackets(String(message?.mes ?? "")));
@@ -2472,8 +2543,38 @@ function buildImagePromptFor(characterId, message, context = getContext()) {
         return "";
     }
 
+    const appearances = collectAppearances(characterId, narration, context);
+
+    if (settings.imagePromptMode !== "raw") {
+        const { system, user } = buildTaggerPrompt({
+            appearances,
+            narration,
+            styleSuffix: settings.imageStyleSuffix,
+        });
+        try {
+            const raw = await runTagger({
+                source: settings.taggerSource,
+                url: settings.taggerUrl,
+                model: settings.taggerModel,
+                maxTokens: clampNumber(settings.taggerMaxTokens, 64, 8192, DEFAULT_SETTINGS.taggerMaxTokens),
+                system,
+                user,
+            });
+            const cleaned = cleanTaggerOutput(raw);
+            if (cleaned) {
+                return cleaned;
+            }
+            // Tagger produced nothing usable (e.g. reasoning-only reply):
+            // fall back to raw composition rather than skipping the image.
+            console.warn("[NPC POV Memory] Tagger returned nothing; using raw prompt.");
+        } catch (error) {
+            console.error("[NPC POV Memory] Tagger failed; using raw prompt.", error);
+            toastr.warning("Tagger failed; used the raw scene instead.", "Image");
+        }
+    }
+
     return composeImagePrompt({
-        appearances: collectAppearances(characterId, narration, context),
+        appearances,
         narration,
         styleSuffix: settings.imageStyleSuffix,
     });
@@ -2541,7 +2642,7 @@ async function generateImageFor(characterId, { messageIndex = null, silent = fal
         return;
     }
 
-    const prompt = buildImagePromptFor(characterId, message, context);
+    const prompt = await buildImagePromptFor(characterId, message, context);
     if (!prompt) {
         if (!silent) {
             toastr.info("That message has no visual narration to draw.");

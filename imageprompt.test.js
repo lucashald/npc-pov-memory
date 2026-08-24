@@ -5,6 +5,8 @@ import {
     findMentionedCharacters,
     composeImagePrompt,
     stableSeedFrom,
+    buildTaggerPrompt,
+    cleanTaggerOutput,
 } from "./imageprompt.js";
 
 // ---- stripDialogue ----
@@ -195,4 +197,57 @@ test("stripDialogue: asterisks never decide what is kept, whatever their share",
     const barelyWrapped = "She leans against the fuselage, watching the horizon. *You* are late.";
     assert.equal(stripDialogue(mostlyWrapped), "She leans against the fuselage, watching the horizon. You are late.");
     assert.equal(stripDialogue(barelyWrapped), "She leans against the fuselage, watching the horizon. You are late.");
+});
+
+// ---- buildTaggerPrompt ----
+
+test("buildTaggerPrompt: includes appearance and scene", () => {
+    const { system, user } = buildTaggerPrompt({
+        appearances: [{ name: "Cara", text: "Teal Twi'lek pilot in a flight suit." }],
+        narration: "She leans against the fuselage at dusk.",
+    });
+    assert.ok(/APPEARANCE:/.test(user));
+    assert.ok(user.includes("Cara: Teal Twi'lek pilot in a flight suit."));
+    assert.ok(/SCENE:/.test(user));
+    assert.ok(user.includes("She leans against the fuselage at dusk."));
+    assert.ok(/only the description/i.test(system) || /ONLY the description/.test(system));
+});
+
+test("buildTaggerPrompt: skips characters with no appearance and notes empty scene", () => {
+    const { user } = buildTaggerPrompt({ appearances: [{ name: "Bob", text: "" }], narration: "" });
+    assert.ok(!/APPEARANCE:/.test(user));
+    assert.ok(user.includes("(no action described)"));
+});
+
+test("buildTaggerPrompt: style suffix becomes a trailing instruction", () => {
+    const { system } = buildTaggerPrompt({
+        appearances: [{ name: "Cara", text: "x" }],
+        narration: "y",
+        styleSuffix: "Shot on 35mm.",
+    });
+    assert.ok(system.includes("Shot on 35mm."));
+});
+
+// ---- cleanTaggerOutput ----
+
+test("cleanTaggerOutput: drops a leading label", () => {
+    assert.equal(cleanTaggerOutput("Description: A woman by a window."), "A woman by a window.");
+});
+
+test("cleanTaggerOutput: keeps only the first paragraph (drops echoed input)", () => {
+    const raw = "A woman by a rain-streaked window.\n\nSCENE: she stands...";
+    assert.equal(cleanTaggerOutput(raw), "A woman by a rain-streaked window.");
+});
+
+test("cleanTaggerOutput: strips a think block", () => {
+    assert.equal(cleanTaggerOutput("<think>hmm</think>A lit hallway."), "A lit hallway.");
+});
+
+test("cleanTaggerOutput: reasoning-only reply collapses to empty", () => {
+    assert.equal(cleanTaggerOutput("<think>all my reasoning and nothing else"), "");
+});
+
+test("cleanTaggerOutput: caps runaway length", () => {
+    const out = cleanTaggerOutput("word ".repeat(400));
+    assert.ok(out.length <= 900);
 });

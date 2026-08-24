@@ -163,3 +163,84 @@ export function stableSeedFrom(value) {
     }
     return hash >>> 0;
 }
+
+// ---------------------------------------------------------------------------
+// Tagger: turn a scene into ONE photographic description via an LLM.
+//
+// The raw narration path hands krea2 the whole message, which carries beats,
+// interiority, and no single focus, so the encoder averages it into mush. The
+// tagger distills one message into one photograph. Crucially it is GIVEN the
+// characters' stored appearance rather than asked to invent it: identity stays
+// fixed across renders, and the model only chooses the moment, pose, framing,
+// and light.
+// ---------------------------------------------------------------------------
+
+const TAGGER_SYSTEM = [
+    "You turn a moment from a roleplay into a single photographic description",
+    "for an image model. Respond with ONLY the description as flowing prose, two",
+    "to four sentences, no preamble, no lists, no quotes, no tags.",
+    "",
+    "You are given each character's fixed APPEARANCE and the SCENE. Use the",
+    "appearance verbatim for how the characters look; do not change their",
+    "species, build, face, hair, or eye colour, and do not invent appearance",
+    "details that are not given. Use the scene only for what is happening: who",
+    "is doing what, their pose and expression, the setting, the time of day, and",
+    "the quality and direction of the light.",
+    "",
+    "Choose ONE clear moment and ONE camera framing (close-up, upper body,",
+    "full body, wide shot). Describe only what a camera would capture. Omit",
+    "thoughts, feelings, dialogue, sounds, smells, and anything abstract. Do not",
+    "write text, captions, labels, room numbers, or signage into the scene.",
+].join("\n");
+
+/**
+ * Build the {system, user} message pair for the tagger.
+ * appearances: [{ name, text }]; entries with empty text are skipped.
+ */
+export function buildTaggerPrompt({ appearances = [], narration = "", styleSuffix = "" } = {}) {
+    const described = appearances
+        .map(entry => ({ name: String(entry?.name ?? "").trim(), text: String(entry?.text ?? "").trim() }))
+        .filter(entry => entry.text);
+
+    const lines = [];
+    if (described.length) {
+        lines.push("APPEARANCE:");
+        for (const entry of described) {
+            lines.push(`- ${entry.name || "Subject"}: ${entry.text}`);
+        }
+        lines.push("");
+    }
+    lines.push("SCENE:");
+    lines.push(collapse(narration) || "(no action described)");
+
+    const suffix = String(styleSuffix ?? "").trim();
+    const system = suffix ? `${TAGGER_SYSTEM}\n\nAlways end with: ${suffix}` : TAGGER_SYSTEM;
+
+    return { system, user: lines.join("\n") };
+}
+
+/**
+ * Clean a tagger reply into a usable prompt.
+ *
+ * Models commonly prepend a label and then echo the input back, so keep the
+ * first paragraph only. Reasoning blocks and code fences are stripped. Length
+ * is capped because a runaway reply would send the whole transcript to the
+ * image model. Reasoning-only replies (empty content, everything in a think
+ * block) collapse to "" and the caller treats that as a failure.
+ */
+export function cleanTaggerOutput(text) {
+    let out = String(text ?? "")
+        .replace(/<think>[\s\S]*?<\/think>/gi, "")
+        .replace(/<think>[\s\S]*$/i, "")
+        .replace(/^```[a-z]*|```$/gim, "")
+        .trim();
+    // Drop a leading label such as "Description:".
+    out = out.replace(/^[a-z ]{0,24}:\s*/i, "").trim();
+    // The answer comes first; anything past a blank line is echoed input.
+    out = out.split(/\n\s*\n/)[0].trim();
+    out = collapse(out);
+    if (out.length > 900) {
+        out = out.slice(0, 900).replace(/\s+\S*$/, "");
+    }
+    return out;
+}

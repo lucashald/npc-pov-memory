@@ -101,3 +101,23 @@ chatting.
 
 Trigger it from **Generate image** in the portrait right-click menu, or turn on
 **Auto-generate after each character message**.
+
+### Tagger vs raw
+
+Image prompts default to a **tagger**: the scene (dialogue stripped) plus each
+in-frame character's stored appearance are sent to an LLM that returns one
+photographic description, choosing a single moment, framing, and light. Raw
+narration overwhelms Krea 2's encoder with beats and interiority; the tagger
+distills it. Unlike a generic tagger, this one is *given* the appearance, so
+identity stays fixed and only the moment varies.
+
+Configure it under image settings:
+
+- **Prompt from** — Tagger LLM (default) or Raw scene (appearance + narration,
+  kept for comparison).
+- **Tagger uses** — a separate OpenAI-compatible endpoint (non-blocking, keeps
+  the chat responsive) or the main chat model (queues with chat).
+- Endpoint URL, model, and max tokens.
+
+If the tagger errors or returns nothing usable, it falls back to the raw scene
+rather than skipping the image.
