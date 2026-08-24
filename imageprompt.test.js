@@ -7,6 +7,7 @@ import {
     stableSeedFrom,
     buildTaggerPrompt,
     cleanTaggerOutput,
+    stripNonVisual,
 } from "./imageprompt.js";
 
 // ---- stripDialogue ----
@@ -250,4 +251,31 @@ test("cleanTaggerOutput: reasoning-only reply collapses to empty", () => {
 test("cleanTaggerOutput: caps runaway length", () => {
     const out = cleanTaggerOutput("word ".repeat(400));
     assert.ok(out.length <= 900);
+});
+
+
+// ---- stripNonVisual ----
+
+test("stripNonVisual: removes a bracket caption even with trailing punctuation", () => {
+    const out = stripNonVisual("[Chloe sends a picture that contains: 1girl, blonde].  She stands by the window.");
+    assert.ok(!out.includes("["));
+    assert.ok(out.includes("She stands by the window."));
+});
+
+test("stripNonVisual: removes GM tags mid-line and DC/HP tags", () => {
+    const out = stripNonVisual("She kneels [sarcastically] on the tile. [SKILL DC: 3] [HP: -3]");
+    assert.ok(!/\[/.test(out));
+    assert.ok(out.includes("She kneels"));
+});
+
+test("stripNonVisual: removes checkbox glyphs", () => {
+    const out = stripNonVisual("First box ☑ second box ☐ done ✓");
+    assert.ok(!/[☑☐✓]/.test(out));
+});
+
+test("stripNonVisual: removes a markdown link entirely", () => {
+    const out = stripNonVisual("See [the note](http://x) on the desk.");
+    assert.ok(!out.includes("http"));
+    assert.ok(!out.includes("["));
+    assert.ok(out.includes("on the desk."));
 });

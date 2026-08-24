@@ -244,3 +244,20 @@ export function cleanTaggerOutput(text) {
     }
     return out;
 }
+
+// Remove everything a camera cannot see, for image prompts specifically:
+// bracketed meta anywhere on the line (GM tags, [X sends a picture that
+// contains: ...] captions, [SKILL DC]/[HP]), markdown links, and checkbox
+// glyphs. The RP interceptor's stripStandaloneBrackets deliberately keeps
+// mid-sentence brackets like "she said [sarcastically] hi"; for an image none
+// of that is visual, so here it all goes.
+const MARKDOWN_LINK = /\[[^\]\n]*\]\([^)\n]*\)/g;
+const BRACKET_SPAN = /\[[^\]\n]*\]/g;
+const NON_VISUAL_GLYPHS = /[☑☐✓✔✗✘√]/g;
+
+export function stripNonVisual(text) {
+    return String(text ?? "")
+        .replace(MARKDOWN_LINK, " ")
+        .replace(BRACKET_SPAN, " ")
+        .replace(NON_VISUAL_GLYPHS, " ");
+}

@@ -20,6 +20,7 @@ import {
     findMentionedCharacters,
     stableSeedFrom,
     stripDialogue,
+    stripNonVisual,
 } from "./imageprompt.js";
 import { runTagger } from "./tagger.js";
 import { removeReasoningFromString } from "../../../reasoning.js";
@@ -2540,8 +2541,9 @@ function collectAppearances(subjectId, narration, context) {
 /** Build the prose prompt for one render, or "" if there is nothing to draw. */
 async function buildImagePromptFor(characterId, message, context = getContext()) {
     const settings = getSettings();
-    // Meta/GM bracket tags are instructions, not things a camera can see.
-    const narration = stripDialogue(stripStandaloneBrackets(String(message?.mes ?? "")));
+    // For an image, nothing in brackets, no checkbox glyph, and no dialogue is
+    // visual, so strip all of it (more aggressive than the RP interceptor).
+    const narration = stripDialogue(stripNonVisual(String(message?.mes ?? "")));
     if (!narration) {
         return "";
     }
