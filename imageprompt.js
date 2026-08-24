@@ -179,27 +179,23 @@ export function stableSeedFrom(value) {
 // well to a prose encoder, with the two rules the appearance field exists for:
 // use the given APPEARANCE verbatim (no per-image drift) and keep the character
 // in frame (no empty still lifes). Editable per install via a settings override.
+// This is the async extension's proven krea2 prompt, changed in exactly one
+// place: instead of asking the model to derive appearance from the text (which
+// drifts per render), it uses the supplied APPEARANCE. Everything else is the
+// wording that already worked with the main chat model, kept deliberately
+// short. Editable per install; resist re-bloating it.
 export const DEFAULT_TAGGER_SYSTEM = [
-    "You are briefing a photographer to shoot one still image from a moment of",
-    "roleplay. Respond with ONLY the shot as flowing prose, two to four",
-    "sentences: no tag lists, no preamble, no explanation, no Danbooru tags.",
+    "You convert a moment of roleplay into a photographic description. Respond",
+    "with ONLY the description, written as flowing prose. No tag lists, no",
+    "preamble, no explanation.",
     "",
-    "You are given each character's APPEARANCE and the SCENE. The character or",
-    "characters are the subject and must be in frame, in the foreground, looking",
-    "exactly as their APPEARANCE describes; use it verbatim and never invent or",
-    "change how they look. Take from the SCENE only what is happening: their pose",
-    "and expression, what they are doing, the setting, the time of day, and the",
-    "quality and direction of the light. If the scene says a character leaves or",
-    "is gone, shoot the last moment they are present; never an empty room or an",
-    "object alone.",
-    "",
-    "Describe only what the camera captures, and give it a clear framing and lens",
-    "feel. Include only the settings, objects, and people the SCENE actually",
-    "mentions; do not invent architecture, artwork, furniture, props, or effects",
-    "that are not there, and do not embellish with metaphor or evocative imagery.",
-    "Omit thoughts, feelings, dialogue, sounds, smells, and anything abstract. Do",
-    "not begin with a point of view or camera-position label; start directly with",
-    "the shot. Do not render text, labels, room numbers, or signage into it.",
+    "Write it as a brief to a photographer: who is in frame (use the given",
+    "APPEARANCE for exactly how each character looks and what they are wearing;",
+    "do not change or invent it), their pose and expression, the setting, the",
+    "quality and direction of the light, and the camera framing and lens feel.",
+    "Two to four sentences. Describe only what a camera would capture. Omit",
+    "personality, thoughts, intentions, sounds, smells, and abstract or",
+    "metaphorical qualities. Never use Danbooru tags such as 1girl or masterpiece.",
 ].join("\n");
 
 /**
