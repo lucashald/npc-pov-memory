@@ -2505,14 +2505,15 @@ function openNpcContextMenu(characterId, x, y) {
 }
 
 // ============================================================
-// Image generation (raw narration + stored appearance)
+// Image generation
 //
-// Deliberately does NOT run the message through a tagger LLM. Krea 2's
-// encoder reads prose directly, and it is no better or worse than a tagger
-// at inventing framing and lighting the transcript never stated, so the
-// extra hop only adds latency and a place to lose detail. What the tagger
-// cannot supply and this can: the character's stored appearance, which is
-// stable across renders and changes only when the story changes it.
+// Two prompt modes, both ending by prepending the stored appearance with
+// composeImagePrompt:
+//   tagger - an LLM distills the messy narration into one clean camera
+//            moment (pose, setting, light, framing) WITHOUT touching
+//            appearance, then we prepend the appearance ourselves.
+//   raw    - the stripped narration is used directly (kept for comparison).
+// Keeping appearance out of the tagger's hands is what stops it drifting.
 // ============================================================
 
 /** Resolve the message this render should illustrate. */
@@ -2575,11 +2576,17 @@ async function buildImagePromptFor(characterId, message, context = getContext())
 
     const appearances = collectAppearances(characterId, narration, context);
 
+    // Scene text for the final prompt. In tagger mode the LLM distills the raw
+    // narration into one clean camera moment; in raw mode we use the narration
+    // as-is. Either way, the stored appearance is prepended below by
+    // composeImagePrompt, so the tagger never handles appearance and cannot
+    // drift it.
+    let scene = narration;
+
     if (settings.imagePromptMode !== "raw") {
         const { system, user } = buildTaggerPrompt({
-            appearances,
+            names: appearances.map(entry => entry.name).filter(Boolean),
             narration,
-            styleSuffix: settings.imageStyleSuffix,
             systemOverride: settings.taggerSystemPrompt,
         });
         try {
@@ -2593,20 +2600,21 @@ async function buildImagePromptFor(characterId, message, context = getContext())
             });
             const cleaned = cleanTaggerOutput(raw);
             if (cleaned) {
-                return cleaned;
+                scene = cleaned;
+            } else {
+                // Reasoning-only or empty reply: keep the raw narration.
+                console.warn("[NPC POV Memory] Tagger returned nothing; using raw scene.");
             }
-            // Tagger produced nothing usable (e.g. reasoning-only reply):
-            // fall back to raw composition rather than skipping the image.
-            console.warn("[NPC POV Memory] Tagger returned nothing; using raw prompt.");
         } catch (error) {
-            console.error("[NPC POV Memory] Tagger failed; using raw prompt.", error);
+            console.error("[NPC POV Memory] Tagger failed; using raw scene.", error);
             toastr.warning("Tagger failed; used the raw scene instead.", "Image");
         }
     }
 
+    // Appearance is injected here, not by the tagger.
     return composeImagePrompt({
         appearances,
-        narration,
+        narration: scene,
         styleSuffix: settings.imageStyleSuffix,
     });
 }

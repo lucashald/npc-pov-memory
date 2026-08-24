@@ -202,31 +202,44 @@ test("stripDialogue: asterisks never decide what is kept, whatever their share",
 
 // ---- buildTaggerPrompt ----
 
-test("buildTaggerPrompt: includes appearance and scene", () => {
+test("buildTaggerPrompt: lists names and the scene, not appearance", () => {
     const { system, user } = buildTaggerPrompt({
-        appearances: [{ name: "Cara", text: "Teal Twi'lek pilot in a flight suit." }],
-        narration: "She leans against the fuselage at dusk.",
+        names: ["Cara", "Bren"],
+        narration: "They argue over the open engine panel at dusk.",
     });
-    assert.ok(/APPEARANCE:/.test(user));
-    assert.ok(user.includes("Cara: Teal Twi'lek pilot in a flight suit."));
+    assert.ok(/Characters in frame: Cara, Bren/.test(user));
     assert.ok(/SCENE:/.test(user));
-    assert.ok(user.includes("She leans against the fuselage at dusk."));
-    assert.ok(/ONLY the description/i.test(system));
+    assert.ok(user.includes("They argue over the open engine panel at dusk."));
+    // Appearance must NOT be requested from the tagger.
+    assert.ok(!/APPEARANCE/.test(user));
+    assert.ok(/do NOT describe their fixed appearance/i.test(system) || /not describe their fixed appearance/i.test(system));
 });
 
-test("buildTaggerPrompt: skips characters with no appearance and notes empty scene", () => {
-    const { user } = buildTaggerPrompt({ appearances: [{ name: "Bob", text: "" }], narration: "" });
-    assert.ok(!/APPEARANCE:/.test(user));
+test("buildTaggerPrompt: omits the names line when none are given", () => {
+    const { user } = buildTaggerPrompt({ names: [], narration: "An empty corridor." });
+    assert.ok(!/Characters in frame/.test(user));
+    assert.ok(user.includes("An empty corridor."));
+});
+
+test("buildTaggerPrompt: notes an empty scene", () => {
+    const { user } = buildTaggerPrompt({ names: ["Cara"], narration: "" });
     assert.ok(user.includes("(no action described)"));
 });
 
-test("buildTaggerPrompt: style suffix becomes a trailing instruction", () => {
-    const { system } = buildTaggerPrompt({
-        appearances: [{ name: "Cara", text: "x" }],
-        narration: "y",
-        styleSuffix: "Shot on 35mm.",
-    });
-    assert.ok(system.includes("Shot on 35mm."));
+test("buildTaggerPrompt: default points appearance at the supplied APPEARANCE", () => {
+    const { system } = buildTaggerPrompt({ names: ["Cara"], narration: "y" });
+    assert.ok(/photographer/i.test(system));
+    assert.ok(/not describe their fixed appearance/i.test(system));
+});
+
+test("buildTaggerPrompt: systemOverride replaces the default", () => {
+    const { system } = buildTaggerPrompt({ names: ["Cara"], narration: "y", systemOverride: "Custom instructions here." });
+    assert.equal(system, "Custom instructions here.");
+});
+
+test("buildTaggerPrompt: blank override falls back to default", () => {
+    const { system } = buildTaggerPrompt({ names: [], narration: "y", systemOverride: "   " });
+    assert.ok(/photographer/i.test(system));
 });
 
 // ---- cleanTaggerOutput ----
@@ -280,23 +293,3 @@ test("stripNonVisual: removes a markdown link entirely", () => {
     assert.ok(out.includes("on the desk."));
 });
 
-test("buildTaggerPrompt: default points appearance at the supplied APPEARANCE", () => {
-    const { system } = buildTaggerPrompt({ appearances: [{ name: "Cara", text: "x" }], narration: "y" });
-    assert.ok(/APPEARANCE/.test(system));
-    assert.ok(/do not change or invent/i.test(system));
-    assert.ok(/photographer/i.test(system));
-});
-
-test("buildTaggerPrompt: systemOverride replaces the default", () => {
-    const { system } = buildTaggerPrompt({
-        appearances: [{ name: "Cara", text: "x" }],
-        narration: "y",
-        systemOverride: "Custom instructions here.",
-    });
-    assert.equal(system, "Custom instructions here.");
-});
-
-test("buildTaggerPrompt: blank override falls back to default", () => {
-    const { system } = buildTaggerPrompt({ appearances: [], narration: "y", systemOverride: "   " });
-    assert.ok(/photographer/i.test(system));
-});

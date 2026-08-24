@@ -121,3 +121,13 @@ Configure it under image settings:
 
 If the tagger errors or returns nothing usable, it falls back to the raw scene
 rather than skipping the image.
+
+#### How the tagger and appearance combine
+
+The tagger is given only the character names and the scene, and it describes
+only the action: pose, expression, setting, light, and camera framing. It is
+told NOT to describe fixed appearance. The stored appearance field is then
+prepended to the tagger's output by the same composition step the raw path
+uses. So appearance is injected by the extension, never produced by the
+tagger, which means it cannot drift between renders no matter what the tagger
+does with the scene.

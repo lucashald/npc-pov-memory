@@ -175,53 +175,55 @@ export function stableSeedFrom(value) {
 // and light.
 // ---------------------------------------------------------------------------
 
-// Default tagger instruction. Kept in the photographer-brief voice that reads
-// well to a prose encoder, with the two rules the appearance field exists for:
-// use the given APPEARANCE verbatim (no per-image drift) and keep the character
-// in frame (no empty still lifes). Editable per install via a settings override.
-// This is the async extension's proven krea2 prompt, changed in exactly one
-// place: instead of asking the model to derive appearance from the text (which
-// drifts per render), it uses the supplied APPEARANCE. Everything else is the
-// wording that already worked with the main chat model, kept deliberately
-// short. Editable per install; resist re-bloating it.
+// Default tagger instruction.
+//
+// The tagger describes ONLY the action of a moment: what the named characters
+// are doing, their pose and expression, the setting, the light, and the shot
+// framing. It is deliberately told NOT to describe fixed appearance (hair, eye
+// colour, build, face, clothing) because we prepend the stored APPEARANCE field
+// ourselves afterward (see composeImagePrompt). That split is the whole point:
+// the appearance cannot drift if the tagger never handles it, and the tagger's
+// job shrinks to distilling messy narration into one clean camera moment.
+// Editable per install; resist re-bloating it.
 export const DEFAULT_TAGGER_SYSTEM = [
-    "You convert a moment of roleplay into a photographic description. Respond",
-    "with ONLY the description, written as flowing prose. No tag lists, no",
-    "preamble, no explanation.",
+    "You convert a moment of roleplay into a photographer's brief for one still",
+    "image. Respond with ONLY the brief, written as flowing prose. No tag lists,",
+    "no preamble, no explanation.",
     "",
-    "Write it as a brief to a photographer: who is in frame (use the given",
-    "APPEARANCE for exactly how each character looks and what they are wearing;",
-    "do not change or invent it), their pose and expression, the setting, the",
-    "quality and direction of the light, and the camera framing and lens feel.",
-    "Two to four sentences. Describe only what a camera would capture. Omit",
-    "personality, thoughts, intentions, sounds, smells, and abstract or",
-    "metaphorical qualities. Never use Danbooru tags such as 1girl or masterpiece.",
+    "Describe what the named characters are doing: their pose, their expression,",
+    "where they are, the quality and direction of the light, and the camera",
+    "framing and lens feel. Do NOT describe their fixed appearance (hair, eye",
+    "colour, skin, build, face, or clothing); that is supplied separately, so",
+    "just refer to them by name. Two to four sentences. Describe only what a",
+    "camera would capture. Omit personality, thoughts, intentions, sounds,",
+    "smells, and abstract or metaphorical qualities. Never use Danbooru tags.",
 ].join("\n");
 
 /**
  * Build the {system, user} message pair for the tagger.
- * appearances: [{ name, text }]; entries with empty text are skipped.
+ * names: the characters in frame, so the tagger can attribute actions.
+ * narration: the scene text (dialogue and meta already stripped).
  * systemOverride: a custom instruction; falls back to DEFAULT_TAGGER_SYSTEM.
+ *
+ * Note: appearance is intentionally NOT sent here. It is prepended to the
+ * tagger's output by composeImagePrompt, so the tagger never sees or can drift
+ * it.
  */
-export function buildTaggerPrompt({ appearances = [], narration = "", styleSuffix = "", systemOverride = "" } = {}) {
+export function buildTaggerPrompt({ names = [], narration = "", systemOverride = "" } = {}) {
     const baseSystem = String(systemOverride ?? "").trim() || DEFAULT_TAGGER_SYSTEM;
-    const described = appearances
-        .map(entry => ({ name: String(entry?.name ?? "").trim(), text: String(entry?.text ?? "").trim() }))
-        .filter(entry => entry.text);
+    const cleanNames = (Array.isArray(names) ? names : [])
+        .map(n => String(n ?? "").trim())
+        .filter(Boolean);
 
     const lines = [];
-    if (described.length) {
-        lines.push("APPEARANCE:");
-        for (const entry of described) {
-            lines.push(`- ${entry.name || "Subject"}: ${entry.text}`);
-        }
+    if (cleanNames.length) {
+        lines.push(`Characters in frame: ${cleanNames.join(", ")}`);
         lines.push("");
     }
     lines.push("SCENE:");
     lines.push(collapse(narration) || "(no action described)");
 
-    const suffix = String(styleSuffix ?? "").trim();
-    const system = suffix ? `${baseSystem}\n\nAlways end with: ${suffix}` : baseSystem;
+    const system = baseSystem;
 
     return { system, user: lines.join("\n") };
 }
