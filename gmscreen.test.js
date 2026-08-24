@@ -257,3 +257,18 @@ test("collectChatImages: still handles legacy fields", () => {
         { url: "old2.png", messageIndex: 0, name: "Bob" },
     ]);
 });
+
+test("extractFirstJsonObject: handles the five-key appearance payload with prefill", () => {
+    const prefill = '{\n"autobiography": "';
+    const reply = 'Bob is wary.","relationship":"tense","secrets":"none","goals":"gain trust",'
+        + '"appearance":"A heavyset man in a soot-stained coat, left eye swollen shut."}\ntrailing prose';
+    const parsed = JSON.parse(extractFirstJsonObject(prefill + reply));
+    assert.equal(parsed.appearance, "A heavyset man in a soot-stained coat, left eye swollen shut.");
+    assert.equal(parsed.goals, "gain trust");
+});
+
+test("extractFirstJsonObject: tolerates a payload with no appearance key", () => {
+    const parsed = JSON.parse(extractFirstJsonObject(
+        '{"autobiography":"a","relationship":"b","secrets":"c","goals":"d"}'));
+    assert.equal(parsed.appearance, undefined);
+});

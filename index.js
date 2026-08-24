@@ -39,6 +39,10 @@ const DEFAULT_SETTINGS = {
     includeRelationship: true,
     includeSecrets: true,
     includeGoals: true,
+    // Appearance is opt-in: when off it is neither maintained nor injected,
+    // and the update call does not spend tokens on it.
+    trackAppearance: false,
+    includeAppearance: false,
     filterMetaForNpcs: true,
     treatUnmarkedAsNpc: false,
     updateInterval: 8,
@@ -106,6 +110,12 @@ function makeEmptyStore() {
             text: "",
             updatedAt: null,
         },
+        // Physical description, maintained only when trackAppearance is on.
+        // Blank by default and never auto-invented; see buildUpdateSystemPrompt.
+        appearance: {
+            text: "",
+            updatedAt: null,
+        },
         relationships: {},
     };
 }
@@ -116,6 +126,7 @@ function normalizeStore(rawStore) {
     store.autobiography.lastMessageIndexByChat = store.autobiography.lastMessageIndexByChat || {};
     store.secrets = Object.assign(makeEmptyStore().secrets, store.secrets || {});
     store.goals = Object.assign(makeEmptyStore().goals, store.goals || {});
+    store.appearance = Object.assign(makeEmptyStore().appearance, store.appearance || {});
     store.relationships = store.relationships || {};
 
     for (const [key, relationship] of Object.entries(store.relationships)) {
@@ -330,13 +341,22 @@ function clampNumber(value, min, max, fallback) {
     return Math.max(min, Math.min(max, Math.floor(number)));
 }
 
-function buildUpdateSystemPrompt(characterName, personaName, maxWords) {
+function buildUpdateSystemPrompt(characterName, personaName, maxWords, trackAppearance = false) {
+    const appearanceRules = trackAppearance
+        ? [
+            "- The appearance field is what this NPC physically looks like right now: build, features, hair, clothing, and visible condition such as injuries, dirt, or exhaustion.",
+            "- Write appearance in plain visual prose that a photographer could shoot from. Describe only what a camera would capture.",
+            "- NEVER invent appearance details. If the transcript does not describe how someone looks, leave the existing appearance exactly as it is, and leave it empty if it is already empty.",
+            "- Preserve permanent features (species, build, face, eye colour, permanent marks) verbatim unless the transcript explicitly describes them changing. Reword only the parts that actually changed.",
+        ]
+        : [];
+
     return [
         "You maintain private memory for one NPC in a SillyTavern roleplay.",
         `NPC: ${characterName}`,
         `Current user persona: ${personaName}`,
         "",
-        "Update four private memory fields from the new transcript.",
+        `Update ${trackAppearance ? "five" : "four"} private memory fields from the new transcript.`,
         "Rules:",
         "- Write from the NPC's point of view.",
         "- Include only things the NPC witnessed, was told, did, felt, or could reasonably infer.",
@@ -347,15 +367,26 @@ function buildUpdateSystemPrompt(characterName, personaName, maxWords) {
         "- The goals field is for active objectives, plans, unresolved intentions, and things the NPC wants to accomplish.",
         "- Preserve existing secrets and goals unless the transcript clearly changes, reveals, completes, or invalidates them.",
         "- Do not write secrets or goals as instructions to the user; write them as private NPC state.",
+        ...appearanceRules,
         "- If the new scene appears separate from earlier memories, say that it seems to be a separate encounter or later time.",
         `- Keep each field concise, no more than about ${maxWords} words.`,
         "",
         "Return JSON only, with exactly these keys:",
-        "{\"autobiography\":\"...\",\"relationship\":\"...\",\"secrets\":\"...\",\"goals\":\"...\"}",
+        trackAppearance
+            ? "{\"autobiography\":\"...\",\"relationship\":\"...\",\"secrets\":\"...\",\"goals\":\"...\",\"appearance\":\"...\"}"
+            : "{\"autobiography\":\"...\",\"relationship\":\"...\",\"secrets\":\"...\",\"goals\":\"...\"}",
     ].join("\n");
 }
 
-function buildUpdateUserPrompt(character, persona, store, relationship, messages) {
+function buildUpdateUserPrompt(character, persona, store, relationship, messages, trackAppearance = false) {
+    const appearanceBlock = trackAppearance
+        ? [
+            `Existing appearance for ${character.name}:`,
+            store.appearance.text || "(empty)",
+            "",
+        ]
+        : [];
+
     return [
         `Existing autobiography for ${character.name}:`,
         store.autobiography.text || "(empty)",
@@ -369,6 +400,7 @@ function buildUpdateUserPrompt(character, persona, store, relationship, messages
         `Existing goals for ${character.name}:`,
         store.goals.text || "(empty)",
         "",
+        ...appearanceBlock,
         "New transcript:",
         formatTranscript(messages, persona.name),
     ].join("\n");
@@ -389,6 +421,8 @@ function parseJsonResponse(text) {
         relationship: String(parsed.relationship || "").trim(),
         secrets: String(parsed.secrets || "").trim(),
         goals: String(parsed.goals || "").trim(),
+        // Absent whenever appearance tracking is off; callers ignore "".
+        appearance: String(parsed.appearance || "").trim(),
     };
 }
 
@@ -478,8 +512,9 @@ async function maybeUpdateMemory(characterId, { force = false } = {}) {
     }
 
     const maxWords = clampNumber(settings.maxMemoryWords, 50, 2000, DEFAULT_SETTINGS.maxMemoryWords);
-    const systemPrompt = buildUpdateSystemPrompt(character.name, persona.name, maxWords);
-    const userPrompt = buildUpdateUserPrompt(character, persona, store, relationship, summaryMessages);
+    const trackAppearance = Boolean(settings.trackAppearance);
+    const systemPrompt = buildUpdateSystemPrompt(character.name, persona.name, maxWords, trackAppearance);
+    const userPrompt = buildUpdateUserPrompt(character, persona, store, relationship, summaryMessages, trackAppearance);
 
     try {
         isUpdating = true;
@@ -502,6 +537,13 @@ async function maybeUpdateMemory(characterId, { force = false } = {}) {
         if (updated.goals) {
             store.goals.text = updated.goals;
             store.goals.updatedAt = updatedAt;
+        }
+
+        // Only written when tracking is on, so a stray key from the model can
+        // never populate a field the user opted out of.
+        if (trackAppearance && updated.appearance) {
+            store.appearance.text = updated.appearance;
+            store.appearance.updatedAt = updatedAt;
         }
 
         store.autobiography.updatedAt = updatedAt;
@@ -536,6 +578,10 @@ function buildInjectedMemoryPrompt(character, store, persona) {
 
     if (settings.includeGoals && store.goals.text) {
         parts.push(`Private goals and objectives:\n${store.goals.text}`);
+    }
+
+    if (settings.trackAppearance && settings.includeAppearance && store.appearance.text) {
+        parts.push(`Current appearance:\n${store.appearance.text}`);
     }
 
     if (!parts.length) {
@@ -640,8 +686,10 @@ function savePrivateFieldsForCurrent() {
     const updatedAt = nowIso();
     store.secrets.text = String($("#npc-pov-memory-secrets").val() || "").trim();
     store.goals.text = String($("#npc-pov-memory-goals").val() || "").trim();
+    store.appearance.text = String($("#npc-pov-memory-appearance").val() || "").trim();
     store.secrets.updatedAt = updatedAt;
     store.goals.updatedAt = updatedAt;
+    store.appearance.updatedAt = updatedAt;
 
     return writeStore(characterId, store).then(() => {
         setInjectedMemory(characterId);
@@ -717,6 +765,14 @@ function createSettingsPanel() {
                             <span>Inject private goals</span>
                         </label>
                         <label class="checkbox_label">
+                            <input id="npc-pov-memory-track-appearance" type="checkbox">
+                            <span>Track appearance (physical description)</span>
+                        </label>
+                        <label class="checkbox_label">
+                            <input id="npc-pov-memory-include-appearance" type="checkbox">
+                            <span>Inject appearance into prompts</span>
+                        </label>
+                        <label class="checkbox_label">
                             <input id="npc-pov-memory-filter-meta" type="checkbox">
                             <span>Strip GM/meta bracket tags for non-GM NPCs</span>
                         </label>
@@ -770,6 +826,11 @@ function createSettingsPanel() {
                             <label>
                                 <span>Private goals</span>
                                 <textarea id="npc-pov-memory-goals" class="text_pole" rows="5"></textarea>
+                            </label>
+                            <label class="npc-pov-memory-appearance-editor">
+                                <span>Appearance (visual description for image generation)</span>
+                                <textarea id="npc-pov-memory-appearance" class="text_pole" rows="5"
+                                    placeholder="Write what this character looks like, as plain visual prose."></textarea>
                             </label>
                             <button id="npc-pov-memory-save-private" class="menu_button">Save private notes</button>
                         </div>
@@ -827,6 +888,19 @@ function bindSettingsPanel() {
 
     $("#npc-pov-memory-include-goals").on("change", function () {
         getSettings().includeGoals = Boolean($(this).prop("checked"));
+        saveSettings();
+        setInjectedMemory();
+    });
+
+    $("#npc-pov-memory-track-appearance").on("change", function () {
+        getSettings().trackAppearance = Boolean($(this).prop("checked"));
+        saveSettings();
+        setInjectedMemory();
+        refreshSettingsPanel();
+    });
+
+    $("#npc-pov-memory-include-appearance").on("change", function () {
+        getSettings().includeAppearance = Boolean($(this).prop("checked"));
         saveSettings();
         setInjectedMemory();
     });
@@ -1242,6 +1316,12 @@ function refreshSettingsPanel() {
     $("#npc-pov-memory-show-speaker-buttons").prop("checked", settings.showGroupSpeakerButtons);
     $("#npc-pov-memory-focus-clear-strategy").val(String(settings.focusClearStrategy));
     $("#npc-pov-memory-include-goals").prop("checked", settings.includeGoals);
+    $("#npc-pov-memory-track-appearance").prop("checked", settings.trackAppearance);
+    $("#npc-pov-memory-include-appearance")
+        .prop("checked", settings.includeAppearance)
+        .prop("disabled", !settings.trackAppearance);
+    // The appearance editor is only meaningful while tracking is on.
+    $(".npc-pov-memory-appearance-editor").toggle(Boolean(settings.trackAppearance));
     $("#npc-pov-memory-filter-meta").prop("checked", settings.filterMetaForNpcs);
     $("#npc-pov-memory-treat-unmarked").prop("checked", settings.treatUnmarkedAsNpc);
     $("#npc-pov-memory-interval").val(settings.updateInterval);
@@ -1256,6 +1336,7 @@ function refreshSettingsPanel() {
         $(".npc-pov-memory-preview").text("Open a character or group chat to view stored NPC memory.");
         $("#npc-pov-memory-secrets").val("");
         $("#npc-pov-memory-goals").val("");
+        $("#npc-pov-memory-appearance").val("");
         $("#npc-pov-memory-role").val("");
         return;
     }
@@ -1282,6 +1363,10 @@ function refreshSettingsPanel() {
 
     if (!$("#npc-pov-memory-goals").is(":focus")) {
         $("#npc-pov-memory-goals").val(goals);
+    }
+
+    if (!$("#npc-pov-memory-appearance").is(":focus")) {
+        $("#npc-pov-memory-appearance").val(store.appearance.text || "");
     }
 }
 
@@ -1594,6 +1679,7 @@ function showMemorySummary(characterId) {
             <h3>${escapeHtml(character.name)}${role ? ` <small>(${role.toUpperCase()})</small>` : ""}</h3>
             ${section("Autobiography", store.autobiography.text)}
             ${section(`Relationship with ${persona.name}`, relationship)}
+            ${getSettings().trackAppearance ? section("Appearance", store.appearance.text) : ""}
             ${section("Secrets and hidden knowledge", store.secrets.text)}
             ${section("Private goals", store.goals.text)}
         </div>`;

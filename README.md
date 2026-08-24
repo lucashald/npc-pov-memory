@@ -42,3 +42,27 @@ speaker buttons" in the extension settings) for the NPC manager menu:
 
 Bulk operations edit both `mes` and the active swipe, save the chat, and
 refuse to apply if the chat changed while they were running.
+
+## Appearance field
+
+Off by default. Enable **Track appearance** in the extension settings to add a
+fifth stored field alongside autobiography, relationship, secrets, and goals.
+
+- **Blank until you write it.** The updater is explicitly told never to invent
+  appearance details, so an undescribed character stays empty rather than
+  acquiring a hallucinated face that then becomes canon.
+- **Edit it by hand** in the settings panel, next to Secrets and Goals, and save
+  with the same button. Right-click a portrait and choose *View memory summary*
+  to read it.
+- **Maintained like the other fields.** Once populated, the updater revises it
+  from the transcript, preserving permanent features (species, build, face, eye
+  colour, permanent marks) unless the story explicitly changes them, and
+  rewording only what actually changed (clothing, injuries, dirt, exhaustion).
+- **Not injected by default.** Recent appearance changes are already visible in
+  the chat history, so injecting it usually wastes tokens. Turn on **Inject
+  appearance into prompts** when a change needs to survive falling out of
+  context.
+
+The field is written as plain visual prose so an image generator can consume it
+directly. Turning tracking off leaves stored text untouched and removes
+appearance from the update call entirely.
