@@ -1542,6 +1542,35 @@ async function removeCharacterFromCurrentGroup(characterId) {
     toastr.success(`Removed ${character.name} from the group.`);
 }
 
+// Set gmscreen_role on every current group member in one pass.
+// value: "npc" | "gm" | "" (clear). exceptCharacterId is skipped (typically
+// the GM card you right-clicked).
+async function bulkSetGroupRoles(value, exceptCharacterId = null) {
+    const context = getContext();
+    const members = getGroupMemberCharacters(context);
+    if (!members.length) {
+        toastr.warning("No group chat is currently open.");
+        return;
+    }
+
+    const roleValue = value === "gm" || value === "npc" ? value : undefined;
+    let changed = 0;
+    for (const member of members) {
+        if (exceptCharacterId !== null && member.id === Number(exceptCharacterId)) {
+            continue;
+        }
+        await context.writeExtensionField(member.id, "gmscreen_role", roleValue);
+        changed++;
+    }
+
+    refreshSettingsPanel();
+    toastr.success(
+        roleValue
+            ? `Set ${changed} group member${changed === 1 ? "" : "s"} to ${roleValue.toUpperCase()}.`
+            : `Cleared the role on ${changed} group member${changed === 1 ? "" : "s"}.`,
+    );
+}
+
 // ---- memory summary popup ----
 
 function showMemorySummary(characterId) {
@@ -2074,6 +2103,19 @@ function buildNpcMenuItems(characterId) {
                 { label: "Default (unset)", checked: role === "", action: () => setGmscreenRoleFor(characterId, "") },
                 { label: "GM / narrator", checked: role === "gm", action: () => setGmscreenRoleFor(characterId, "gm") },
                 { label: "NPC", checked: role === "npc", action: () => setGmscreenRoleFor(characterId, "npc") },
+            ],
+        },
+        {
+            label: "Bulk roles (group)",
+            submenu: () => [
+                { label: "← Back", submenu: rootItems },
+                { separator: true },
+                {
+                    label: `Everyone except ${character?.name || "this card"} → NPC`,
+                    action: () => bulkSetGroupRoles("npc", Number(characterId)),
+                },
+                { label: "Everyone → NPC", action: () => bulkSetGroupRoles("npc") },
+                { label: "Clear everyone's role", action: () => bulkSetGroupRoles("") },
             ],
         },
         { label: "View memory summary", action: () => showMemorySummary(characterId) },
