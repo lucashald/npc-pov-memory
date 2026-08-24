@@ -162,3 +162,35 @@ test("stripDialogue: balanced quotes still strip normally", () => {
     assert.ok(out.includes("She wipes her hands."));
     assert.ok(out.includes("The lamp flickers."));
 });
+
+// ---- asterisks as emphasis, not action markers (regression) ----
+
+test("stripDialogue: keeps the body when asterisks only wrap a scene header", () => {
+    const input = [
+        "⏳ *Monday afternoon, after final bell*",
+        "\u{1F4CD} *Classroom 118 - ground floor, art wing*",
+        "",
+        "Rows of old wooden desks, a tall window facing the athletic field,",
+        "afternoon light slanting gold through half-drawn blinds.",
+    ].join("\n");
+    const out = stripDialogue(input);
+    assert.ok(out.includes("Rows of old wooden desks"), `body was dropped: ${out}`);
+    assert.ok(out.includes("half-drawn blinds"), out);
+});
+
+test("stripDialogue: drops scene-marker emoji", () => {
+    const out = stripDialogue("⏳ *The next morning* \u{1F4CD} *Her bedroom* Light through the blinds.");
+    assert.ok(!/[⏳\u{1F4CD}]/u.test(out), out);
+});
+
+test("stripDialogue: keeps narration when asterisks wrap a short quoted message", () => {
+    const input = "Three dots. Then: *Good. I was worried.* A pause. The next message arrives with a photo attached, taken in a mirror under bad light.";
+    const out = stripDialogue(input);
+    assert.ok(out.includes("The next message arrives with a photo attached"), out);
+});
+
+test("stripDialogue: still treats asterisks as actions when they dominate", () => {
+    const input = "*She leans against the fuselage, arms folded, watching the horizon.* You are late.";
+    const out = stripDialogue(input);
+    assert.equal(out, "She leans against the fuselage, arms folded, watching the horizon.");
+});

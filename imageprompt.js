@@ -18,13 +18,23 @@ const ASTERISK_SPAN = /\*([^*\n]+)\*/g;
  *
  * Two conventions are in play and cannot be told apart by syntax alone:
  * some writers wrap actions in *asterisks* and leave speech bare, others
- * quote speech and leave narration bare. So: if the message contains
- * asterisk spans, treat those as the narration and drop everything else.
- * Otherwise drop quoted speech and keep the remainder. A message with
- * neither marker is assumed to be all narration.
+ * quote speech and leave narration bare and use asterisks only for emphasis.
+ *
+ * Presence of asterisks is not enough to tell them apart, so decide by
+ * proportion: only when the asterisk spans make up most of the message is
+ * the writer really marking actions with them. A message that is mostly
+ * plain prose with a couple of emphasised fragments (a scene header, a
+ * quoted text message) is the second convention, and treating those few
+ * fragments as "the narration" would throw the entire description away.
+ *
+ * Scene-marker emoji are dropped either way: they are bookkeeping, and an
+ * image model will happily render them as literal text on a chalkboard.
  */
+const ASTERISK_MAJORITY = 0.5;
+const SCENE_MARKERS = /[⏳⌛\u{1F4CD}\u{1F4C5}\u{1F4C6}\u{1F552}\u{1F55B}]/gu;
+
 export function stripDialogue(text) {
-    const input = String(text ?? "");
+    const input = String(text ?? "").replace(SCENE_MARKERS, " ");
     if (!input.trim()) {
         return "";
     }
@@ -40,10 +50,15 @@ export function stripDialogue(text) {
     }
 
     if (asteriskSpans.length) {
-        return collapse(asteriskSpans.join(" "));
+        const spanChars = asteriskSpans.join("").replace(/\s/g, "").length;
+        const totalChars = input.replace(/\*/g, "").replace(/\s/g, "").length;
+        if (totalChars > 0 && spanChars / totalChars >= ASTERISK_MAJORITY) {
+            return collapse(asteriskSpans.join(" "));
+        }
     }
 
-    return collapse(removeQuotedSpeech(input));
+    // Asterisks are emphasis here, so drop the markers and keep the words.
+    return collapse(removeQuotedSpeech(input.replace(/\*/g, " ")));
 }
 
 /**
