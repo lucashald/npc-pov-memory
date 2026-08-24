@@ -2567,20 +2567,29 @@ function collectAppearances(subjectId, narration, context) {
 /** Build the prose prompt for one render, or "" if there is nothing to draw. */
 async function buildImagePromptFor(characterId, message, context = getContext()) {
     const settings = getSettings();
-    // For an image, nothing in brackets, no checkbox glyph, and no dialogue is
-    // visual, so strip all of it (more aggressive than the RP interceptor).
-    const narration = stripDialogue(stripNonVisual(String(message?.mes ?? "")));
+    // Meta brackets and checkbox glyphs are never visual, so remove them from
+    // everything. Dialogue is removed only for the raw path (krea2 would render
+    // speech as text); the tagger keeps dialogue for context and is told to
+    // omit speech from the shot.
+    const cleaned = stripNonVisual(String(message?.mes ?? ""));
+    const narration = stripDialogue(cleaned);
+    if (!cleaned.trim()) {
+        return "";
+    }
+
     if (!narration) {
         return "";
     }
 
     const appearances = collectAppearances(characterId, narration, context);
 
-    // Scene text for the final prompt. In tagger mode the LLM distills the raw
-    // narration into one clean camera moment; in raw mode we use the narration
-    // as-is. Either way, the stored appearance is prepended below by
-    // composeImagePrompt, so the tagger never handles appearance and cannot
-    // drift it.
+    console.debug("[img] 1 narration (after strip):", narration);
+    console.debug("[img] 2 names:", appearances.map(e => e.name), "| appearance texts:", appearances.map(e => e.text));
+
+    // Scene text for the final prompt. In tagger mode the LLM distills the
+    // dialogue-stripped narration into one clean camera moment; in raw mode we
+    // use that narration directly. Either way the stored appearance is
+    // prepended below by composeImagePrompt, so the tagger cannot drift it.
     let scene = narration;
 
     if (settings.imagePromptMode !== "raw") {
@@ -2589,6 +2598,7 @@ async function buildImagePromptFor(characterId, message, context = getContext())
             narration,
             systemOverride: settings.taggerSystemPrompt,
         });
+        console.debug("[img] 3 tagger SENT — source:", settings.taggerSource, "\nsystem:\n" + system, "\n\nuser:\n" + user);
         try {
             const raw = await runTagger({
                 source: settings.taggerSource,
@@ -2598,25 +2608,29 @@ async function buildImagePromptFor(characterId, message, context = getContext())
                 system,
                 user,
             });
-            const cleaned = cleanTaggerOutput(raw);
-            if (cleaned) {
-                scene = cleaned;
+            console.debug("[img] 4 tagger RAW reply:\n" + String(raw));
+            const cleanedTag = cleanTaggerOutput(raw);
+            console.debug("[img] 5 tagger CLEANED:", cleanedTag);
+            if (cleanedTag) {
+                scene = cleanedTag;
             } else {
                 // Reasoning-only or empty reply: keep the raw narration.
-                console.warn("[NPC POV Memory] Tagger returned nothing; using raw scene.");
+                console.warn("[img] tagger returned nothing usable; using raw scene.");
             }
         } catch (error) {
-            console.error("[NPC POV Memory] Tagger failed; using raw scene.", error);
+            console.error("[img] tagger failed; using raw scene.", error);
             toastr.warning("Tagger failed; used the raw scene instead.", "Image");
         }
     }
 
     // Appearance is injected here, not by the tagger.
-    return composeImagePrompt({
+    const finalPrompt = composeImagePrompt({
         appearances,
         narration: scene,
         styleSuffix: settings.imageStyleSuffix,
     });
+    console.debug("[img] 6 FINAL prompt to ComfyUI:\n" + finalPrompt);
+    return finalPrompt;
 }
 
 /**

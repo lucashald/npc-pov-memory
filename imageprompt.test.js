@@ -208,11 +208,11 @@ test("buildTaggerPrompt: lists names and the scene, not appearance", () => {
         narration: "They argue over the open engine panel at dusk.",
     });
     assert.ok(/Characters in frame: Cara, Bren/.test(user));
-    assert.ok(/SCENE:/.test(user));
+    assert.ok(/single photograph/i.test(user));
     assert.ok(user.includes("They argue over the open engine panel at dusk."));
     // Appearance must NOT be requested from the tagger.
     assert.ok(!/APPEARANCE/.test(user));
-    assert.ok(/do NOT describe their fixed appearance/i.test(system) || /not describe their fixed appearance/i.test(system));
+    assert.ok(/not describe their permanent appearance/i.test(system));
 });
 
 test("buildTaggerPrompt: omits the names line when none are given", () => {
@@ -229,7 +229,7 @@ test("buildTaggerPrompt: notes an empty scene", () => {
 test("buildTaggerPrompt: default points appearance at the supplied APPEARANCE", () => {
     const { system } = buildTaggerPrompt({ names: ["Cara"], narration: "y" });
     assert.ok(/photographer/i.test(system));
-    assert.ok(/not describe their fixed appearance/i.test(system));
+    assert.ok(/not describe their permanent appearance/i.test(system));
 });
 
 test("buildTaggerPrompt: systemOverride replaces the default", () => {

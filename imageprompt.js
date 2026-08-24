@@ -186,28 +186,28 @@ export function stableSeedFrom(value) {
 // job shrinks to distilling messy narration into one clean camera moment.
 // Editable per install; resist re-bloating it.
 export const DEFAULT_TAGGER_SYSTEM = [
-    "You convert a moment of roleplay into a photographer's brief for one still",
-    "image. Respond with ONLY the brief, written as flowing prose. No tag lists,",
-    "no preamble, no explanation.",
+    "You convert roleplay text into a photographic description of a single still",
+    "image. Respond with ONLY the description, written as flowing prose. No tag",
+    "lists, no preamble, no explanation.",
     "",
-    "Describe what the named characters are doing: their pose, their expression,",
-    "where they are, the quality and direction of the light, and the camera",
-    "framing and lens feel. Do NOT describe their fixed appearance (hair, eye",
-    "colour, skin, build, face, or clothing); that is supplied separately, so",
-    "just refer to them by name. Two to four sentences. Describe only what a",
-    "camera would capture. Omit personality, thoughts, intentions, sounds,",
-    "smells, and abstract or metaphorical qualities. Never use Danbooru tags.",
+    "Write it as a brief to a photographer: what the named characters are doing,",
+    "their pose and expression, the setting, the quality and direction of the",
+    "light, and the camera framing and lens feel. Refer to the characters by",
+    "name; do NOT describe their permanent appearance (hair, eye colour, skin,",
+    "build, face, or clothing), which is supplied separately. Two to four",
+    "sentences. Describe only what a camera would capture. Omit dialogue,",
+    "personality, thoughts, intentions, sounds, smells, and abstract or",
+    "metaphorical qualities. Never use Danbooru tags such as 1girl or masterpiece.",
 ].join("\n");
 
 /**
  * Build the {system, user} message pair for the tagger.
  * names: the characters in frame, so the tagger can attribute actions.
- * narration: the scene text (dialogue and meta already stripped).
+ * narration: the scene text (dialogue and meta already stripped upstream).
  * systemOverride: a custom instruction; falls back to DEFAULT_TAGGER_SYSTEM.
  *
- * Note: appearance is intentionally NOT sent here. It is prepended to the
- * tagger's output by composeImagePrompt, so the tagger never sees or can drift
- * it.
+ * Appearance is intentionally NOT sent; composeImagePrompt prepends it to the
+ * tagger's output, so the tagger cannot drift it.
  */
 export function buildTaggerPrompt({ names = [], narration = "", systemOverride = "" } = {}) {
     const baseSystem = String(systemOverride ?? "").trim() || DEFAULT_TAGGER_SYSTEM;
@@ -217,10 +217,11 @@ export function buildTaggerPrompt({ names = [], narration = "", systemOverride =
 
     const lines = [];
     if (cleanNames.length) {
-        lines.push(`Characters in frame: ${cleanNames.join(", ")}`);
+        lines.push(`Characters in frame: ${cleanNames.join(", ")}.`);
         lines.push("");
     }
-    lines.push("SCENE:");
+    lines.push("Describe this moment as a single photograph:");
+    lines.push("");
     lines.push(collapse(narration) || "(no action described)");
 
     const system = baseSystem;
