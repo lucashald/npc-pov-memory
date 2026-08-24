@@ -23,6 +23,7 @@ import {
     stripNonVisual,
 } from "./imageprompt.js";
 import { runTagger } from "./tagger.js";
+import { DEFAULT_TAGGER_SYSTEM } from "./imageprompt.js";
 import { removeReasoningFromString } from "../../../reasoning.js";
 import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from "../../../popup.js";
 import {
@@ -82,6 +83,8 @@ const DEFAULT_SETTINGS = {
     taggerUrl: "http://100.109.251.18:1234/v1/chat/completions",
     taggerModel: "",
     taggerMaxTokens: 1000,
+    // Empty = use the built-in DEFAULT_TAGGER_SYSTEM; set to override it.
+    taggerSystemPrompt: "",
     filterMetaForNpcs: true,
     treatUnmarkedAsNpc: false,
     updateInterval: 8,
@@ -871,6 +874,11 @@ function createSettingsPanel() {
                                     <span>Tagger max tokens</span>
                                     <input id="npc-pov-memory-tagger-max" class="text_pole" type="number" min="64" max="8192">
                                 </label>
+                                <label>
+                                    <span>Tagger instructions (blank = built-in default)</span>
+                                    <textarea id="npc-pov-memory-tagger-system" class="text_pole" rows="8"></textarea>
+                                </label>
+                                <button id="npc-pov-memory-tagger-reset" class="menu_button">Reset instructions to default</button>
                             </div>
                             <label>
                                 <span>ComfyUI URL</span>
@@ -1051,6 +1059,19 @@ function bindSettingsPanel() {
     $("#npc-pov-memory-tagger-max").on("change", function () {
         getSettings().taggerMaxTokens = clampNumber($(this).val(), 64, 8192, DEFAULT_SETTINGS.taggerMaxTokens);
         saveSettings();
+    });
+
+    $("#npc-pov-memory-tagger-system").on("change", function () {
+        // Store trimmed; if the user clears it, fall back to the default.
+        getSettings().taggerSystemPrompt = String($(this).val() || "").trim();
+        saveSettings();
+    });
+
+    $("#npc-pov-memory-tagger-reset").on("click", function () {
+        getSettings().taggerSystemPrompt = "";
+        saveSettings();
+        $("#npc-pov-memory-tagger-system").val(DEFAULT_TAGGER_SYSTEM);
+        toastr.info("Tagger instructions reset to the built-in default.");
     });
 
     $("#npc-pov-memory-image-url").on("change", function () {
@@ -1511,6 +1532,10 @@ function refreshSettingsPanel() {
     $("#npc-pov-memory-tagger-url").val(settings.taggerUrl);
     $("#npc-pov-memory-tagger-model").val(settings.taggerModel);
     $("#npc-pov-memory-tagger-max").val(settings.taggerMaxTokens);
+    // Show the effective instructions: the override, or the default when blank.
+    if (!$("#npc-pov-memory-tagger-system").is(":focus")) {
+        $("#npc-pov-memory-tagger-system").val(settings.taggerSystemPrompt || DEFAULT_TAGGER_SYSTEM);
+    }
     $(".npc-pov-memory-tagger-settings").toggle(settings.imagePromptMode !== "raw");
     $("#npc-pov-memory-image-url").val(settings.imageComfyUrl);
     $("#npc-pov-memory-image-workflow").val(settings.imageWorkflow);
@@ -2555,6 +2580,7 @@ async function buildImagePromptFor(characterId, message, context = getContext())
             appearances,
             narration,
             styleSuffix: settings.imageStyleSuffix,
+            systemOverride: settings.taggerSystemPrompt,
         });
         try {
             const raw = await runTagger({

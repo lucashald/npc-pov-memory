@@ -175,36 +175,36 @@ export function stableSeedFrom(value) {
 // and light.
 // ---------------------------------------------------------------------------
 
-const TAGGER_SYSTEM = [
-    "You turn a moment from a roleplay into a single photographic description",
-    "for an image model. Respond with ONLY the description as flowing prose, two",
-    "to four sentences, no preamble, no lists, no quotes, no tags.",
+// Default tagger instruction. Kept in the photographer-brief voice that reads
+// well to a prose encoder, with the two rules the appearance field exists for:
+// use the given APPEARANCE verbatim (no per-image drift) and keep the character
+// in frame (no empty still lifes). Editable per install via a settings override.
+export const DEFAULT_TAGGER_SYSTEM = [
+    "You are briefing a photographer to shoot one still image from a moment of",
+    "roleplay. Respond with ONLY the shot as flowing prose, two to four",
+    "sentences: no tag lists, no preamble, no explanation, no Danbooru tags.",
     "",
-    "You are given each character's fixed APPEARANCE and the SCENE. Use the",
-    "appearance verbatim for how the characters look; do not change their",
-    "species, build, face, hair, or eye colour, and do not invent appearance",
-    "details that are not given. Use the scene only for what is happening: who",
-    "is doing what, their pose and expression, the setting, the time of day, and",
-    "the quality and direction of the light.",
+    "You are given each character's APPEARANCE and the SCENE. The character or",
+    "characters are the subject and must be in frame, in the foreground, looking",
+    "exactly as their APPEARANCE describes; use it verbatim and never invent or",
+    "change how they look. Take from the SCENE only what is happening: their pose",
+    "and expression, what they are doing, the setting, the time of day, and the",
+    "quality and direction of the light. If the scene says a character leaves or",
+    "is gone, shoot the last moment they are present; never an empty room or an",
+    "object alone.",
     "",
-    "The described character or characters ARE the subject of the photograph and",
-    "MUST appear in it, in the foreground, fully described from the APPEARANCE.",
-    "Even if the scene says a character leaves, is gone, or is out of view, show",
-    "them in the last moment they are present. Never return an empty room, a",
-    "still life, or a photograph of only an object; a person is always in frame.",
-    "",
-    "Choose ONE clear moment and ONE camera framing (close-up, upper body,",
-    "full body, wide shot) that centres the character. Describe only what a",
-    "camera would capture. Omit thoughts, feelings, dialogue, sounds, smells,",
-    "and anything abstract. Do not write text, captions, labels, room numbers,",
-    "or signage into the scene.",
+    "Describe only what the camera captures, and give it a clear framing and lens",
+    "feel. Omit thoughts, feelings, dialogue, sounds, smells, and anything",
+    "abstract. Do not render text, labels, room numbers, or signage into the shot.",
 ].join("\n");
 
 /**
  * Build the {system, user} message pair for the tagger.
  * appearances: [{ name, text }]; entries with empty text are skipped.
+ * systemOverride: a custom instruction; falls back to DEFAULT_TAGGER_SYSTEM.
  */
-export function buildTaggerPrompt({ appearances = [], narration = "", styleSuffix = "" } = {}) {
+export function buildTaggerPrompt({ appearances = [], narration = "", styleSuffix = "", systemOverride = "" } = {}) {
+    const baseSystem = String(systemOverride ?? "").trim() || DEFAULT_TAGGER_SYSTEM;
     const described = appearances
         .map(entry => ({ name: String(entry?.name ?? "").trim(), text: String(entry?.text ?? "").trim() }))
         .filter(entry => entry.text);
@@ -221,7 +221,7 @@ export function buildTaggerPrompt({ appearances = [], narration = "", styleSuffi
     lines.push(collapse(narration) || "(no action described)");
 
     const suffix = String(styleSuffix ?? "").trim();
-    const system = suffix ? `${TAGGER_SYSTEM}\n\nAlways end with: ${suffix}` : TAGGER_SYSTEM;
+    const system = suffix ? `${baseSystem}\n\nAlways end with: ${suffix}` : baseSystem;
 
     return { system, user: lines.join("\n") };
 }

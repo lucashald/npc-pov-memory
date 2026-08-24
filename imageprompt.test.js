@@ -211,7 +211,7 @@ test("buildTaggerPrompt: includes appearance and scene", () => {
     assert.ok(user.includes("Cara: Teal Twi'lek pilot in a flight suit."));
     assert.ok(/SCENE:/.test(user));
     assert.ok(user.includes("She leans against the fuselage at dusk."));
-    assert.ok(/only the description/i.test(system) || /ONLY the description/.test(system));
+    assert.ok(/ONLY the shot/i.test(system));
 });
 
 test("buildTaggerPrompt: skips characters with no appearance and notes empty scene", () => {
@@ -278,4 +278,24 @@ test("stripNonVisual: removes a markdown link entirely", () => {
     assert.ok(!out.includes("http"));
     assert.ok(!out.includes("["));
     assert.ok(out.includes("on the desk."));
+});
+
+test("buildTaggerPrompt: default requires the character in frame", () => {
+    const { system } = buildTaggerPrompt({ appearances: [{ name: "Cara", text: "x" }], narration: "y" });
+    assert.ok(/must be in frame/i.test(system));
+    assert.ok(/APPEARANCE/.test(system) && /verbatim/i.test(system));
+});
+
+test("buildTaggerPrompt: systemOverride replaces the default", () => {
+    const { system } = buildTaggerPrompt({
+        appearances: [{ name: "Cara", text: "x" }],
+        narration: "y",
+        systemOverride: "Custom instructions here.",
+    });
+    assert.equal(system, "Custom instructions here.");
+});
+
+test("buildTaggerPrompt: blank override falls back to default", () => {
+    const { system } = buildTaggerPrompt({ appearances: [], narration: "y", systemOverride: "   " });
+    assert.ok(/photographer/i.test(system));
 });
