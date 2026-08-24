@@ -4,16 +4,28 @@ import {
     default_avatar,
     extension_prompt_roles,
     extension_prompt_types,
+    getRequestHeaders,
     getThumbnailUrl,
+    updateMessageBlock,
 } from "../../../../script.js";
 import { removeReasoningFromString } from "../../../reasoning.js";
+import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from "../../../popup.js";
 import {
     editGroup,
     group_activation_strategy,
     groups,
     selected_group,
 } from "../../../group-chats.js";
-import { gmscreenRole, stripStandaloneBrackets, extractFirstJsonObject } from "./gmscreen.js";
+import {
+    gmscreenRole,
+    stripStandaloneBrackets,
+    extractFirstJsonObject,
+    resolveRewriteScope,
+    buildRewritePrompt,
+    cleanRewriteOutput,
+    collectChatImages,
+    planBracketStrip,
+} from "./gmscreen.js";
 
 const EXTENSION_KEY = "npc-pov-memory";
 const STORAGE_KEY = "npcPovMemory";
@@ -574,8 +586,11 @@ function clearInjectedMemory() {
 }
 
 function forgetRelationshipForCurrent() {
+    return forgetRelationshipFor(getSettingsCharacterId());
+}
+
+function forgetRelationshipFor(characterId) {
     const context = getContext();
-    const characterId = getSettingsCharacterId(context);
     const character = getCharacterById(characterId, context);
     if (!character) {
         toastr.warning("No NPC is currently selected.");
@@ -594,8 +609,11 @@ function forgetRelationshipForCurrent() {
 }
 
 function forgetAllForCurrent() {
+    return forgetAllFor(getSettingsCharacterId());
+}
+
+function forgetAllFor(characterId) {
     const context = getContext();
-    const characterId = getSettingsCharacterId(context);
     const character = getCharacterById(characterId, context);
     if (!character) {
         toastr.warning("No NPC is currently selected.");
@@ -633,8 +651,11 @@ function savePrivateFieldsForCurrent() {
 }
 
 async function setGmscreenRoleForCurrent(value) {
+    return setGmscreenRoleFor(getSettingsCharacterId(), value);
+}
+
+async function setGmscreenRoleFor(characterId, value) {
     const context = getContext();
-    const characterId = getSettingsCharacterId(context);
     const character = getCharacterById(characterId, context);
     if (!character) {
         toastr.warning("No NPC is currently selected.");
@@ -935,6 +956,15 @@ function ensureGroupSpeakerBar() {
             } else {
                 await triggerGroupSpeaker(characterId);
             }
+        }
+    });
+
+    bar.on("contextmenu", ".npc-pov-memory-speaker-trigger", function (event) {
+        const characterId = Number($(this).attr("data-character-id"));
+        if (Number.isInteger(characterId)) {
+            event.preventDefault();
+            event.stopPropagation();
+            openNpcContextMenu(characterId, event.clientX, event.clientY);
         }
     });
 }
@@ -1427,3 +1457,684 @@ jQuery(async () => {
         toastr.error(String(error), "NPC POV Memory failed to initialize");
     }
 });
+
+// ============================================================
+// NPC manager: portrait-row context menu, group membership,
+// bulk history rewrite, persisted bracket strip, portrait swap.
+// All reachable via right-click on a speaker-bar portrait.
+// ============================================================
+
+const BULK_SNAPSHOT_CAP = 10;
+let bulkSnapshots = [];
+let bulkCancelRequested = false;
+let isBulkRunning = false;
+
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+// ---- group membership ----
+
+function getCurrentGroupOrWarn() {
+    const context = getContext();
+    const group = getGroupById(context.groupId || selected_group);
+    if (!group || !Array.isArray(group.members)) {
+        toastr.warning("No group chat is currently open.");
+        return null;
+    }
+    return group;
+}
+
+function getNonMemberCharacters(context = getContext()) {
+    const group = getGroupById(context.groupId || selected_group);
+    const members = new Set(group?.members || []);
+    const out = [];
+    for (let id = 0; id < (context.characters?.length || 0); id++) {
+        const character = context.characters[id];
+        if (character?.avatar && !members.has(character.avatar)) {
+            out.push({ id, character });
+        }
+    }
+    out.sort((a, b) => String(a.character.name || "").localeCompare(String(b.character.name || "")));
+    return out;
+}
+
+async function addCharacterToCurrentGroup(characterId) {
+    const group = getCurrentGroupOrWarn();
+    const character = getCharacterById(characterId);
+    if (!group || !character?.avatar) {
+        return;
+    }
+    if (group.members.includes(character.avatar)) {
+        toastr.info(`${character.name} is already in this group.`);
+        return;
+    }
+
+    group.members.push(character.avatar);
+    await editGroup(group.id, false, false);
+    refreshSettingsPanel();
+    toastr.success(`Added ${character.name} to the group.`);
+}
+
+async function removeCharacterFromCurrentGroup(characterId) {
+    const group = getCurrentGroupOrWarn();
+    const character = getCharacterById(characterId);
+    if (!group || !character?.avatar) {
+        return;
+    }
+    if (!group.members.includes(character.avatar)) {
+        toastr.info(`${character.name} is not in this group.`);
+        return;
+    }
+
+    group.members = group.members.filter(avatar => avatar !== character.avatar);
+    if (focusedSpeakerCharacterId === Number(characterId)) {
+        focusedSpeakerCharacterId = null;
+        focusedSpeakerGroupId = null;
+    }
+    await editGroup(group.id, false, false);
+    refreshSettingsPanel();
+    toastr.success(`Removed ${character.name} from the group.`);
+}
+
+// ---- memory summary popup ----
+
+function showMemorySummary(characterId) {
+    const character = getCharacterById(characterId);
+    if (!character) {
+        return;
+    }
+    const persona = getPersona();
+    const store = readStore(character);
+    const relationship = store.relationships[persona.key]?.text || "";
+    const role = gmscreenRole(character);
+
+    const section = (title, text) => `
+        <div class="npc-pov-memory-summary-section">
+            <div class="npc-pov-memory-summary-title">${escapeHtml(title)}</div>
+            <div class="npc-pov-memory-summary-text">${escapeHtml(text || "(empty)")}</div>
+        </div>`;
+
+    const html = `
+        <div class="npc-pov-memory-summary">
+            <h3>${escapeHtml(character.name)}${role ? ` <small>(${role.toUpperCase()})</small>` : ""}</h3>
+            ${section("Autobiography", store.autobiography.text)}
+            ${section(`Relationship with ${persona.name}`, relationship)}
+            ${section("Secrets and hidden knowledge", store.secrets.text)}
+            ${section("Private goals", store.goals.text)}
+        </div>`;
+
+    return callGenericPopup(html, POPUP_TYPE.TEXT, "", { wide: true, allowVerticalScrolling: true });
+}
+
+// ---- bulk engine: snapshots, undo, apply ----
+
+function snapshotChatForUndo() {
+    const context = getContext();
+    bulkSnapshots.push(clone(context.chat || []));
+    if (bulkSnapshots.length > BULK_SNAPSHOT_CAP) {
+        bulkSnapshots.shift();
+    }
+}
+
+async function undoLastBulkChange() {
+    const snapshot = bulkSnapshots.pop();
+    if (!snapshot) {
+        toastr.info("No bulk change to undo.");
+        return;
+    }
+    const context = getContext();
+    context.chat.length = 0;
+    for (const message of snapshot) {
+        context.chat.push(message);
+    }
+    await context.saveChat();
+    if (typeof context.reloadCurrentChat === "function") {
+        await context.reloadCurrentChat();
+    }
+    toastr.success("Reverted the last bulk change.");
+}
+
+function writeMessageText(message, newText) {
+    message.mes = newText;
+    if (message.swipe_id !== undefined
+        && Array.isArray(message.swipes)
+        && message.swipes[message.swipe_id] !== undefined) {
+        message.swipes[message.swipe_id] = newText;
+    }
+}
+
+// Apply a list of {index, newText, remove} changes (indices refer to the chat
+// as it was when planned). Splices removals from highest index down so earlier
+// indices stay valid, saves, and re-renders.
+async function applyBulkChanges(changes) {
+    if (!changes.length) {
+        return;
+    }
+    const context = getContext();
+    const chat = context.chat;
+    const sorted = [...changes].sort((a, b) => b.index - a.index);
+    let removed = 0;
+
+    for (const change of sorted) {
+        const message = chat[change.index];
+        if (!message) {
+            continue;
+        }
+        if (change.remove) {
+            chat.splice(change.index, 1);
+            removed++;
+        } else {
+            writeMessageText(message, change.newText);
+        }
+    }
+
+    await context.saveChat();
+
+    if (removed > 0 && typeof context.reloadCurrentChat === "function") {
+        await context.reloadCurrentChat();
+    } else {
+        for (const change of sorted) {
+            if (!change.remove && chat[change.index]) {
+                updateMessageBlock(change.index, chat[change.index]);
+            }
+        }
+    }
+}
+
+// ---- bulk rewrite ----
+
+async function generateRewrittenMessage(systemPrompt, prompt) {
+    const context = getContext();
+    const settings = getSettings();
+    const responseLength = clampNumber(settings.responseLength, 100, 4000, DEFAULT_SETTINGS.responseLength);
+
+    if (typeof context.generateRaw === "function") {
+        return await context.generateRaw({ prompt, systemPrompt, responseLength });
+    }
+    if (typeof context.generateQuietPrompt === "function") {
+        return await context.generateQuietPrompt({ quietPrompt: `${systemPrompt}\n\n${prompt}`, responseLength });
+    }
+    throw new Error("No quiet generation API is available in this SillyTavern build.");
+}
+
+async function runBulkRewrite({ scope, instruction }) {
+    if (isBulkRunning) {
+        toastr.warning("A bulk operation is already running.");
+        return;
+    }
+    const context = getContext();
+    const chat = context.chat || [];
+    const indices = resolveRewriteScope(chat, scope);
+    if (!indices.length) {
+        toastr.info("No messages matched that scope.");
+        return;
+    }
+
+    const persona = getPersona();
+    const startLength = chat.length;
+    snapshotChatForUndo();
+    isBulkRunning = true;
+    bulkCancelRequested = false;
+
+    let progressToast = null;
+    const showProgress = (done, total) => {
+        if (progressToast) {
+            toastr.clear(progressToast);
+        }
+        progressToast = toastr.info(
+            `Rewriting ${done}/${total}… click to cancel`,
+            "Bulk rewrite",
+            { timeOut: 0, extendedTimeOut: 0, tapToDismiss: false, onclick: () => { bulkCancelRequested = true; } },
+        );
+    };
+
+    const changes = [];
+    let done = 0;
+    try {
+        showProgress(0, indices.length);
+        // Highest index first so planned indices survive any removals on apply.
+        for (const index of [...indices].sort((a, b) => b - a)) {
+            if (bulkCancelRequested) {
+                break;
+            }
+            const message = chat[index];
+            const original = String(message?.mes ?? "");
+            if (!original.trim()) {
+                done++;
+                showProgress(done, indices.length);
+                continue;
+            }
+
+            const { system, prompt } = buildRewritePrompt({
+                messageText: original,
+                instruction,
+                userName: persona.name,
+            });
+
+            try {
+                const raw = await generateRewrittenMessage(system, prompt);
+                const cleaned = cleanRewriteOutput(removeReasoningFromString(String(raw ?? "")));
+                if (cleaned !== original) {
+                    changes.push({ index, newText: cleaned, remove: cleaned === "" });
+                }
+            } catch (error) {
+                console.error(`[NPC POV Memory] Rewrite failed for message ${index}`, error);
+            }
+
+            done++;
+            showProgress(done, indices.length);
+        }
+
+        // If the chat changed while we were generating (new messages, chat
+        // switch), the planned indices are stale; applying them would corrupt
+        // the wrong messages.
+        if (getContext().chat !== chat || chat.length !== startLength) {
+            toastr.error("The chat changed while rewriting; no edits were applied.", "Bulk rewrite");
+            return;
+        }
+
+        await applyBulkChanges(changes);
+
+        const removed = changes.filter(change => change.remove).length;
+        const edited = changes.length - removed;
+        toastr.success(
+            `${bulkCancelRequested ? "Cancelled. " : ""}Processed ${done}/${indices.length}: ${edited} edited, ${removed} removed.`,
+            "Bulk rewrite",
+        );
+    } finally {
+        if (progressToast) {
+            toastr.clear(progressToast);
+        }
+        isBulkRunning = false;
+        bulkCancelRequested = false;
+    }
+}
+
+async function openRewriteDialog() {
+    const persona = getPersona();
+    const content = $(`
+        <div class="npc-pov-memory-rewrite-dialog">
+            <h3>Rewrite chat history</h3>
+            <label>
+                <span>Instruction (leave empty to remove places where the AI speaks or acts for ${escapeHtml(persona.name)})</span>
+                <textarea id="npc-pov-rw-instruction" class="text_pole" rows="3"
+                    placeholder="e.g. Stop making the villain sympathetic"></textarea>
+            </label>
+            <div class="npc-pov-memory-rewrite-grid">
+                <label>
+                    <span>Scope</span>
+                    <select id="npc-pov-rw-scope" class="text_pole">
+                        <option value="lastN" selected>Last N messages</option>
+                        <option value="all">Entire chat</option>
+                    </select>
+                </label>
+                <label>
+                    <span>N</span>
+                    <input id="npc-pov-rw-n" class="text_pole" type="number" min="1" max="500" value="10">
+                </label>
+                <label>
+                    <span>Apply to</span>
+                    <select id="npc-pov-rw-filter" class="text_pole">
+                        <option value="ai" selected>AI messages only</option>
+                        <option value="user">My messages only</option>
+                        <option value="all">All messages</option>
+                    </select>
+                </label>
+            </div>
+            <small>Each message is rewritten with its own model call. A snapshot is taken first; use "Undo last bulk change" to revert.</small>
+        </div>
+    `);
+
+    const result = await callGenericPopup(content.get(0), POPUP_TYPE.CONFIRM, "", {
+        okButton: "Rewrite",
+        cancelButton: "Cancel",
+        wide: true,
+    });
+
+    if (result !== POPUP_RESULT.AFFIRMATIVE) {
+        return;
+    }
+
+    const mode = String(content.find("#npc-pov-rw-scope").val() || "lastN");
+    const scope = {
+        mode,
+        n: clampNumber(content.find("#npc-pov-rw-n").val(), 1, 500, 10),
+        filter: String(content.find("#npc-pov-rw-filter").val() || "ai"),
+    };
+    const instruction = String(content.find("#npc-pov-rw-instruction").val() || "");
+
+    await runBulkRewrite({ scope, instruction });
+}
+
+// ---- persisted bracket strip ----
+
+async function runPersistBracketStrip() {
+    const context = getContext();
+    const changes = planBracketStrip(context.chat || []);
+    if (!changes.length) {
+        toastr.info("No GM/meta bracket tags found in this chat.");
+        return;
+    }
+
+    const removed = changes.filter(change => change.remove).length;
+    const confirmed = await callGenericPopup(
+        `Strip GM/meta bracket tags from ${changes.length} message${changes.length === 1 ? "" : "s"}?`
+        + (removed ? ` ${removed} tag-only message${removed === 1 ? "" : "s"} will be deleted.` : "")
+        + " A snapshot is taken first.",
+        POPUP_TYPE.CONFIRM,
+    );
+    if (confirmed !== POPUP_RESULT.AFFIRMATIVE) {
+        return;
+    }
+
+    // Re-plan after the confirm dialog: the chat may have changed while it
+    // was open, and stale indices would hit the wrong messages.
+    const freshChanges = planBracketStrip(getContext().chat || []);
+    if (!freshChanges.length) {
+        toastr.info("No GM/meta bracket tags found in this chat.");
+        return;
+    }
+    const freshRemoved = freshChanges.filter(change => change.remove).length;
+
+    snapshotChatForUndo();
+    await applyBulkChanges(freshChanges);
+    toastr.success(`Stripped brackets from ${freshChanges.length - freshRemoved} messages, removed ${freshRemoved}.`);
+}
+
+// ---- portrait from chat image ----
+
+async function setPortraitFromChatImage(characterId, imageUrl) {
+    const character = getCharacterById(characterId);
+    if (!character?.avatar) {
+        return;
+    }
+
+    const confirmed = await callGenericPopup(
+        `Replace ${escapeHtml(character.name)}'s portrait with this image? This changes the card everywhere, not just this chat.`,
+        POPUP_TYPE.CONFIRM,
+    );
+    if (confirmed !== POPUP_RESULT.AFFIRMATIVE) {
+        return;
+    }
+
+    try {
+        const imageResponse = await fetch(imageUrl);
+        if (!imageResponse.ok) {
+            throw new Error(`Could not load image (${imageResponse.status})`);
+        }
+        const blob = await imageResponse.blob();
+
+        const formData = new FormData();
+        formData.append("avatar", blob, "avatar.png");
+        formData.append("avatar_url", character.avatar);
+
+        const uploadResponse = await fetch("/api/characters/edit-avatar", {
+            method: "POST",
+            headers: getRequestHeaders({ omitContentType: true }),
+            body: formData,
+        });
+        if (!uploadResponse.ok) {
+            throw new Error(await uploadResponse.text());
+        }
+
+        // Bust caches and refresh every visible copy of this avatar.
+        const thumbnailUrl = getThumbnailUrl("avatar", character.avatar);
+        await fetch(thumbnailUrl, { method: "GET", cache: "reload" });
+        await fetch(`/characters/${character.avatar}`, { method: "GET", cache: "reload" });
+        $(`img[src^="${thumbnailUrl}"]`).each(function () {
+            const src = this.src;
+            this.src = "";
+            this.src = src;
+        });
+
+        refreshGroupSpeakerBar();
+        toastr.success(`Updated ${character.name}'s portrait.`);
+    } catch (error) {
+        console.error("[NPC POV Memory] Portrait update failed", error);
+        toastr.error(String(error), "Portrait update failed");
+    }
+}
+
+// ---- context menu ----
+
+function closeNpcContextMenu() {
+    $("#npc-pov-memory-ctx").remove();
+    $(document).off(".npcPovCtx");
+}
+
+function renderMenuItems(menu, items) {
+    const list = menu.find(".npc-pov-memory-ctx-list");
+    list.empty();
+    for (const item of items) {
+        if (item.separator) {
+            list.append($("<div>", { class: "npc-pov-memory-ctx-separator" }));
+            continue;
+        }
+        if (item.header) {
+            list.append($("<div>", { class: "npc-pov-memory-ctx-header" }).text(item.header));
+            continue;
+        }
+        if (item.html) {
+            list.append(item.html);
+            continue;
+        }
+
+        const row = $("<div>", { class: "npc-pov-memory-ctx-item" });
+        if (item.disabled) {
+            row.addClass("npc-pov-memory-ctx-disabled");
+        }
+        row.append($("<span>", { class: "npc-pov-memory-ctx-label" }).text(item.label));
+        if (item.checked) {
+            row.append($("<i>", { class: "fa-solid fa-check" }));
+        }
+        if (item.submenu) {
+            row.append($("<i>", { class: "fa-solid fa-chevron-right" }));
+        }
+
+        row.on("click", async function (event) {
+            event.stopPropagation();
+            if (item.disabled) {
+                return;
+            }
+            if (item.submenu) {
+                renderMenuItems(menu, item.submenu());
+                return;
+            }
+            closeNpcContextMenu();
+            try {
+                await item.action?.();
+            } catch (error) {
+                console.error("[NPC POV Memory] Menu action failed", error);
+                toastr.error(String(error));
+            }
+        });
+
+        list.append(row);
+    }
+
+    // Keep the menu inside the viewport after content changes.
+    const rect = menu.get(0).getBoundingClientRect();
+    if (rect.bottom > window.innerHeight) {
+        menu.css("top", Math.max(8, window.innerHeight - rect.height - 8));
+    }
+    if (rect.right > window.innerWidth) {
+        menu.css("left", Math.max(8, window.innerWidth - rect.width - 8));
+    }
+}
+
+function buildPortraitSubmenu(characterId, backItems) {
+    return () => {
+        const context = getContext();
+        const images = collectChatImages(context.chat || []);
+        const items = [
+            { label: "← Back", submenu: () => backItems() },
+            { separator: true },
+        ];
+
+        if (!images.length) {
+            items.push({ label: "No images in this chat", disabled: true });
+            return items;
+        }
+
+        for (const image of images.slice(-24).reverse()) {
+            const thumb = $("<div>", {
+                class: "npc-pov-memory-ctx-item npc-pov-memory-ctx-image",
+                title: `Message #${image.messageIndex}${image.name ? ` (${image.name})` : ""}`,
+            });
+            thumb.append($("<img>", { src: image.url, loading: "lazy" }));
+            thumb.append($("<span>").text(`#${image.messageIndex}${image.name ? ` · ${image.name}` : ""}`));
+            thumb.on("click", async function (event) {
+                event.stopPropagation();
+                closeNpcContextMenu();
+                await setPortraitFromChatImage(characterId, image.url);
+            });
+            items.push({ html: thumb });
+        }
+        return items;
+    };
+}
+
+function buildAddMemberSubmenu(backItems) {
+    return () => {
+        const nonMembers = getNonMemberCharacters();
+        const items = [
+            { label: "← Back", submenu: () => backItems() },
+            { separator: true },
+        ];
+
+        if (!nonMembers.length) {
+            items.push({ label: "Every character is already in this group", disabled: true });
+            return items;
+        }
+
+        const filterInput = $("<input>", {
+            class: "text_pole npc-pov-memory-ctx-filter",
+            type: "search",
+            placeholder: `Filter ${nonMembers.length} characters…`,
+        });
+        filterInput.on("click", event => event.stopPropagation());
+        filterInput.on("input", function () {
+            const query = String($(this).val() || "").toLowerCase();
+            $(this).closest(".npc-pov-memory-ctx-list").find(".npc-pov-memory-ctx-add-row").each(function () {
+                $(this).toggle($(this).attr("data-name").includes(query));
+            });
+        });
+        items.push({ html: filterInput });
+
+        for (const entry of nonMembers) {
+            const name = entry.character.name || `NPC ${entry.id + 1}`;
+            const row = $("<div>", {
+                class: "npc-pov-memory-ctx-item npc-pov-memory-ctx-add-row",
+                "data-name": name.toLowerCase(),
+            });
+            row.append($("<img>", { src: getCharacterAvatarUrl(entry.character), loading: "lazy" }));
+            row.append($("<span>", { class: "npc-pov-memory-ctx-label" }).text(name));
+            row.on("click", async function (event) {
+                event.stopPropagation();
+                closeNpcContextMenu();
+                await addCharacterToCurrentGroup(entry.id);
+            });
+            items.push({ html: row });
+        }
+        return items;
+    };
+}
+
+function buildNpcMenuItems(characterId) {
+    const context = getContext();
+    const character = getCharacterById(characterId, context);
+    const persona = getPersona();
+    const rawRole = character?.data?.extensions?.gmscreen_role;
+    const role = rawRole === "gm" || rawRole === "npc" ? rawRole : "";
+    const isFocused = focusedSpeakerIsCurrent(context) && focusedSpeakerCharacterId === Number(characterId);
+
+    const rootItems = () => buildNpcMenuItems(characterId);
+
+    return [
+        { header: character?.name || "NPC" },
+        {
+            label: isFocused ? "Clear focused speaker" : "Focus this speaker",
+            action: () => toggleFocusedSpeaker(Number(characterId)),
+        },
+        {
+            label: "Set portrait from chat image",
+            submenu: buildPortraitSubmenu(characterId, rootItems),
+        },
+        {
+            label: `Card role${role ? ` (${role.toUpperCase()})` : ""}`,
+            submenu: () => [
+                { label: "← Back", submenu: rootItems },
+                { separator: true },
+                { label: "Default (unset)", checked: role === "", action: () => setGmscreenRoleFor(characterId, "") },
+                { label: "GM / narrator", checked: role === "gm", action: () => setGmscreenRoleFor(characterId, "gm") },
+                { label: "NPC", checked: role === "npc", action: () => setGmscreenRoleFor(characterId, "npc") },
+            ],
+        },
+        { label: "View memory summary", action: () => showMemorySummary(characterId) },
+        {
+            label: "Forget memory",
+            submenu: () => [
+                { label: "← Back", submenu: rootItems },
+                { separator: true },
+                {
+                    label: `Forget relationship with ${persona.name}`,
+                    action: async () => {
+                        const ok = await callGenericPopup(
+                            `Forget ${escapeHtml(character?.name || "this NPC")}'s relationship memory for ${escapeHtml(persona.name)}?`,
+                            POPUP_TYPE.CONFIRM,
+                        );
+                        if (ok === POPUP_RESULT.AFFIRMATIVE) {
+                            await forgetRelationshipFor(characterId);
+                        }
+                    },
+                },
+                {
+                    label: "Forget all memory",
+                    action: async () => {
+                        const ok = await callGenericPopup(
+                            `Forget ALL NPC POV memory stored on ${escapeHtml(character?.name || "this card")}?`,
+                            POPUP_TYPE.CONFIRM,
+                        );
+                        if (ok === POPUP_RESULT.AFFIRMATIVE) {
+                            await forgetAllFor(characterId);
+                        }
+                    },
+                },
+            ],
+        },
+        { label: "Remove from group", action: () => removeCharacterFromCurrentGroup(characterId) },
+        { separator: true },
+        { label: "Add character to group", submenu: buildAddMemberSubmenu(rootItems) },
+        { label: "Rewrite history…", disabled: isBulkRunning, action: () => openRewriteDialog() },
+        { label: "Strip GM brackets from history", disabled: isBulkRunning, action: () => runPersistBracketStrip() },
+        { label: "Undo last bulk change", disabled: !bulkSnapshots.length, action: () => undoLastBulkChange() },
+    ];
+}
+
+function openNpcContextMenu(characterId, x, y) {
+    closeNpcContextMenu();
+
+    const menu = $("<div>", { id: "npc-pov-memory-ctx" });
+    menu.append($("<div>", { class: "npc-pov-memory-ctx-list" }));
+    menu.css({ left: x, top: y });
+    $(document.body).append(menu);
+
+    renderMenuItems(menu, buildNpcMenuItems(characterId));
+
+    $(document).on("mousedown.npcPovCtx", function (event) {
+        if (!menu.get(0).contains(event.target)) {
+            closeNpcContextMenu();
+        }
+    });
+    $(document).on("keydown.npcPovCtx", function (event) {
+        if (event.key === "Escape") {
+            closeNpcContextMenu();
+        }
+    });
+}

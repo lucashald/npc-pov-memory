@@ -157,3 +157,170 @@
         max-width: 120px;
     }
 }
+
+/* Thin horizontal scrollbar for the portrait row. The default Chrome/Windows
+   scrollbar is ~17px tall and ate half the 34px cards when the row overflowed.
+   (scrollbar-width above covers Firefox; this covers Chromium.) */
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-list {
+    padding-bottom: 4px;
+    scrollbar-color: var(--SmartThemeBorderColor) transparent;
+}
+
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-list::-webkit-scrollbar {
+    height: 5px;
+}
+
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-list::-webkit-scrollbar-thumb {
+    background: var(--SmartThemeBorderColor);
+    border-radius: 3px;
+}
+
+/* Right-click context menu on speaker portraits */
+#npc-pov-memory-ctx {
+    position: fixed;
+    z-index: 10000;
+    min-width: 220px;
+    max-width: 300px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 8px;
+    background: var(--SmartThemeBlurTintColor);
+    backdrop-filter: blur(var(--SmartThemeBlurStrength));
+    box-shadow: 0 4px 18px var(--black70a);
+    color: var(--SmartThemeBodyColor);
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-list {
+    display: flex;
+    flex-direction: column;
+    padding: 4px;
+    max-height: 60vh;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-header {
+    padding: 6px 10px 4px;
+    font-weight: 700;
+    opacity: 0.85;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-separator {
+    height: 1px;
+    margin: 4px 6px;
+    background: var(--SmartThemeBorderColor);
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: calc(var(--mainFontSize) * 0.95);
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-item:hover {
+    background: var(--white20a);
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-item .npc-pov-memory-ctx-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-item i {
+    flex: 0 0 auto;
+    opacity: 0.7;
+    font-size: 0.8em;
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-disabled:hover {
+    background: transparent;
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-item img {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-image img {
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+}
+
+#npc-pov-memory-ctx .npc-pov-memory-ctx-filter {
+    margin: 2px 6px 6px;
+    width: calc(100% - 12px);
+    box-sizing: border-box;
+}
+
+/* Memory summary popup */
+.npc-pov-memory-summary {
+    text-align: left;
+}
+
+.npc-pov-memory-summary-section {
+    margin-top: 10px;
+}
+
+.npc-pov-memory-summary-title {
+    font-weight: 700;
+    margin-bottom: 3px;
+}
+
+.npc-pov-memory-summary-text {
+    white-space: pre-wrap;
+    line-height: 1.35;
+    font-size: calc(var(--mainFontSize) * 0.92);
+}
+
+/* Rewrite dialog */
+.npc-pov-memory-rewrite-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+}
+
+.npc-pov-memory-rewrite-dialog label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.npc-pov-memory-rewrite-dialog textarea {
+    width: 100%;
+    resize: vertical;
+}
+
+.npc-pov-memory-rewrite-grid {
+    display: grid;
+    grid-template-columns: 1fr 90px 1fr;
+    gap: 8px;
+}
+
+@media (max-width: 600px) {
+    .npc-pov-memory-rewrite-grid {
+        grid-template-columns: 1fr;
+    }
+}
