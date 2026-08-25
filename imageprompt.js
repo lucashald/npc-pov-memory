@@ -239,9 +239,31 @@ export function buildTaggerPrompt({ names = [], narration = "", systemOverride =
  * block) collapse to "" and the caller treats that as a failure.
  */
 export function cleanTaggerOutput(text) {
-    let out = String(text ?? "")
+    let out = String(text ?? "");
+
+    // Reasoning models wrap thinking in channel markers and put the final
+    // answer last. Harmony uses <|channel|>final<|message|>ANSWER; some local
+    // Gemma/MLX variants use <|channel>thought ... <channel|>ANSWER. Take the
+    // text after the LAST such marker, which is the answer. <|message|> wins
+    // when present (real harmony); otherwise fall back to the channel marker.
+    const messageMarks = [...out.matchAll(/<\|message\|>/gi)];
+    if (messageMarks.length) {
+        const last = messageMarks[messageMarks.length - 1];
+        out = out.slice(last.index + last[0].length);
+    } else {
+        const channelMarks = [...out.matchAll(/<\/?\|?channel\|?>/gi)];
+        if (channelMarks.length) {
+            const last = channelMarks[channelMarks.length - 1];
+            out = out.slice(last.index + last[0].length);
+        }
+    }
+
+    out = out
         .replace(/<think>[\s\S]*?<\/think>/gi, "")
         .replace(/<think>[\s\S]*$/i, "")
+        // strip any leftover control tokens like <|end|>, <|start|>, final tag
+        .replace(/<\|?[a-z_]+\|?>/gi, "")
+        .replace(/^\s*(?:final|analysis|thought)\b[:\s]*/i, "")
         .replace(/^```[a-z]*|```$/gim, "")
         .trim();
     // Drop a leading label such as "Description:".

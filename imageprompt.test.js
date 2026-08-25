@@ -301,3 +301,17 @@ test("stripNonVisual: removes a markdown link entirely", () => {
     assert.ok(out.includes("on the desk."));
 });
 
+
+test("cleanTaggerOutput: extracts the answer from Gemma channel-thought format", () => {
+    const raw = "<|channel>thought\nHere is my reasoning.\nStep 1.<channel|>Sienna sits on a bench in warm afternoon light, medium shot.";
+    assert.equal(cleanTaggerOutput(raw), "Sienna sits on a bench in warm afternoon light, medium shot.");
+});
+
+test("cleanTaggerOutput: extracts the final message from harmony format", () => {
+    const raw = "<|channel|>analysis<|message|>thinking...<|end|><|channel|>final<|message|>A woman at a rain-streaked window.<|end|>";
+    assert.equal(cleanTaggerOutput(raw), "A woman at a rain-streaked window.");
+});
+
+test("cleanTaggerOutput: leaves ordinary output alone", () => {
+    assert.equal(cleanTaggerOutput("Sienna sits on a bench."), "Sienna sits on a bench.");
+});
