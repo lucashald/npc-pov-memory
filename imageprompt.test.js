@@ -248,9 +248,17 @@ test("cleanTaggerOutput: drops a leading label", () => {
     assert.equal(cleanTaggerOutput("Description: A woman by a window."), "A woman by a window.");
 });
 
-test("cleanTaggerOutput: keeps only the first paragraph (drops echoed input)", () => {
-    const raw = "A woman by a rain-streaked window.\n\nSCENE: she stands...";
-    assert.equal(cleanTaggerOutput(raw), "A woman by a rain-streaked window.");
+test("cleanTaggerOutput: keeps the description when a framing header comes first", () => {
+    const raw = "Shot on a 50mm lens, eye-level, medium shot.\n\nSienna sits on a bench holding an iced coffee.";
+    assert.equal(
+        cleanTaggerOutput(raw),
+        "Shot on a 50mm lens, eye-level, medium shot. Sienna sits on a bench holding an iced coffee.",
+    );
+});
+
+test("cleanTaggerOutput: keeps all paragraphs of a multi-paragraph description", () => {
+    const raw = "First beat of the scene.\n\nSecond beat, same shot.";
+    assert.equal(cleanTaggerOutput(raw), "First beat of the scene. Second beat, same shot.");
 });
 
 test("cleanTaggerOutput: strips a think block", () => {

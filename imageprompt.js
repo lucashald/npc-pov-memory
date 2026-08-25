@@ -246,8 +246,10 @@ export function cleanTaggerOutput(text) {
         .trim();
     // Drop a leading label such as "Description:".
     out = out.replace(/^[a-z ]{0,24}:\s*/i, "").trim();
-    // The answer comes first; anything past a blank line is echoed input.
-    out = out.split(/\n\s*\n/)[0].trim();
+    // Keep the whole reply: collapse folds any paragraph breaks into one line.
+    // (Previously this took only the first paragraph to drop echoed input, but
+    // that discarded the description whenever the model led with a one-line
+    // framing header like "Shot on a 50mm lens, eye-level, medium shot.")
     out = collapse(out);
     if (out.length > 900) {
         out = out.slice(0, 900).replace(/\s+\S*$/, "");
