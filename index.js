@@ -2583,8 +2583,8 @@ async function buildImagePromptFor(characterId, message, context = getContext())
 
     const appearances = collectAppearances(characterId, narration, context);
 
-    console.debug("[img] 1 narration (after strip):", narration);
-    console.debug("[img] 2 names:", appearances.map(e => e.name), "| appearance texts:", appearances.map(e => e.text));
+    console.log("[img] 1 narration (after strip):", narration);
+    console.log("[img] 2 names:", appearances.map(e => e.name), "| appearance texts:", appearances.map(e => e.text));
 
     // Scene text for the final prompt. In tagger mode the LLM distills the
     // dialogue-stripped narration into one clean camera moment; in raw mode we
@@ -2598,7 +2598,7 @@ async function buildImagePromptFor(characterId, message, context = getContext())
             narration,
             systemOverride: settings.taggerSystemPrompt,
         });
-        console.debug("[img] 3 tagger SENT — source:", settings.taggerSource, "\nsystem:\n" + system, "\n\nuser:\n" + user);
+        console.log("[img] 3 tagger SENT — source:", settings.taggerSource, "\nsystem:\n" + system, "\n\nuser:\n" + user);
         try {
             const raw = await runTagger({
                 source: settings.taggerSource,
@@ -2608,9 +2608,9 @@ async function buildImagePromptFor(characterId, message, context = getContext())
                 system,
                 user,
             });
-            console.debug("[img] 4 tagger RAW reply:\n" + String(raw));
+            console.log("[img] 4 tagger RAW reply:\n" + String(raw));
             const cleanedTag = cleanTaggerOutput(raw);
-            console.debug("[img] 5 tagger CLEANED:", cleanedTag);
+            console.log("[img] 5 tagger CLEANED:", cleanedTag);
             if (cleanedTag) {
                 scene = cleanedTag;
             } else {
@@ -2629,7 +2629,7 @@ async function buildImagePromptFor(characterId, message, context = getContext())
         narration: scene,
         styleSuffix: settings.imageStyleSuffix,
     });
-    console.debug("[img] 6 FINAL prompt to ComfyUI:\n" + finalPrompt);
+    console.log("[img] 6 FINAL prompt to ComfyUI:\n" + finalPrompt);
     return finalPrompt;
 }
 
