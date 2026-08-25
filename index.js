@@ -485,6 +485,7 @@ async function generateMemoryUpdate(systemPrompt, userPrompt) {
             responseLength,
             prefill: JSON_PREFILL,
         });
+        console.log("[mem] generateRaw RAW reply (prefill prepended below):\n" + JSON_PREFILL + String(raw));
         return parseJsonResponse(JSON_PREFILL + raw);
     }
 
@@ -493,6 +494,7 @@ async function generateMemoryUpdate(systemPrompt, userPrompt) {
             quietPrompt: `${systemPrompt}\n\n${userPrompt}`,
             responseLength,
         });
+        console.log("[mem] generateQuietPrompt RAW reply:\n" + String(raw));
         return parseJsonResponse(raw);
     }
 
