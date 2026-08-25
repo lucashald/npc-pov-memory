@@ -36,6 +36,7 @@ import {
     gmscreenRole,
     stripStandaloneBrackets,
     extractFirstJsonObject,
+    recoverJsonStringFields,
     resolveRewriteScope,
     buildRewritePrompt,
     cleanRewriteOutput,
@@ -90,7 +91,9 @@ const DEFAULT_SETTINGS = {
     updateInterval: 8,
     maxMessagesPerUpdate: 80,
     maxMemoryWords: 450,
-    responseLength: 700,
+    // Must hold all memory fields as JSON in one reply; too small and the
+    // object is truncated into invalid JSON. Five ~450-word fields need room.
+    responseLength: 2500,
     showGroupSpeakerButtons: false,
     focusClearStrategy: group_activation_strategy.POOLED,
     depth: 4,
@@ -448,16 +451,36 @@ function buildUpdateUserPrompt(character, persona, store, relationship, messages
     ].join("\n");
 }
 
+const MEMORY_FIELDS = ["autobiography", "relationship", "secrets", "goals", "appearance"];
+
 function parseJsonResponse(text) {
     const cleaned = removeReasoningFromString(String(text || "")).trim();
     const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i);
     const candidate = extractFirstJsonObject(fenced ? fenced[1] : cleaned);
 
-    if (!candidate) {
+    let parsed = null;
+    if (candidate) {
+        try {
+            parsed = JSON.parse(candidate);
+        } catch {
+            parsed = null;
+        }
+    }
+
+    // The reply was cut off mid-object (invalid/unclosed JSON, common when the
+    // token budget is too small for all five fields): salvage the fields that
+    // did finish rather than discarding the whole update.
+    if (!parsed) {
+        const recovered = recoverJsonStringFields(cleaned, MEMORY_FIELDS);
+        if (Object.keys(recovered).length) {
+            parsed = recovered;
+        }
+    }
+
+    if (!parsed) {
         throw new Error("The model did not return a JSON object.");
     }
 
-    const parsed = JSON.parse(candidate);
     return {
         autobiography: String(parsed.autobiography || "").trim(),
         relationship: String(parsed.relationship || "").trim(),

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
     stripStandaloneBrackets,
     extractFirstJsonObject,
+    recoverJsonStringFields,
     resolveRewriteScope,
     buildRewritePrompt,
     cleanRewriteOutput,
@@ -271,4 +272,26 @@ test("extractFirstJsonObject: tolerates a payload with no appearance key", () =>
     const parsed = JSON.parse(extractFirstJsonObject(
         '{"autobiography":"a","relationship":"b","secrets":"c","goals":"d"}'));
     assert.equal(parsed.appearance, undefined);
+});
+
+test("recoverJsonStringFields: salvages complete fields from a truncated object", () => {
+    const truncated = '{\n"autobiography": "Bob is gruff.",\n"relationship": "Wary of Cara.",\n"goals": "Fix the ship befor';
+    const out = recoverJsonStringFields(truncated, ["autobiography", "relationship", "secrets", "goals", "appearance"]);
+    assert.equal(out.autobiography, "Bob is gruff.");
+    assert.equal(out.relationship, "Wary of Cara.");
+    assert.equal(out.goals, undefined);
+    assert.equal(out.secrets, undefined);
+});
+
+test("recoverJsonStringFields: unescapes JSON escapes in values", () => {
+    // Build the source with JSON.stringify so escaping is unambiguous.
+    const value = 'She said "hi" and left.\nThen returned.';
+    const src = '{"autobiography": ' + JSON.stringify(value) + ', "goals": "trunc';
+    const out = recoverJsonStringFields(src, ["autobiography", "goals"]);
+    assert.equal(out.autobiography, value);
+    assert.equal(out.goals, undefined);
+});
+
+test("recoverJsonStringFields: returns empty when nothing complete", () => {
+    assert.deepEqual(recoverJsonStringFields('{"autobiography": "unclosed value', ["autobiography"]), {});
 });

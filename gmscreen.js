@@ -247,3 +247,25 @@ export function planBracketStrip(chat) {
     }
     return changes;
 }
+
+// Salvage complete "key": "value" string fields from a possibly-truncated
+// JSON object. When a model reply is cut off mid-object the JSON is invalid
+// (no closing brace), so extractFirstJsonObject yields nothing; rather than
+// discard the whole update, keep the fields that did finish. Values are
+// JSON-unescaped. The truncated final field is simply omitted.
+export function recoverJsonStringFields(text, keys) {
+    const src = String(text ?? "");
+    const out = {};
+    for (const key of keys) {
+        const safe = String(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const match = src.match(new RegExp('"' + safe + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"'));
+        if (match) {
+            try {
+                out[key] = JSON.parse('"' + match[1] + '"');
+            } catch {
+                out[key] = match[1];
+            }
+        }
+    }
+    return out;
+}
