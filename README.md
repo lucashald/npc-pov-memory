@@ -1,133 +1,180 @@
-## gmscreen shared card contract
+# NPC POV Memory
 
-This extension is part of the **gmscreen** suite. Cards can carry a neutral,
-extension-agnostic role flag:
+A SillyTavern extension that keeps character-card memory from an NPC's point of view, injects it into replies, and provides group speaker controls, history editing, and optional ComfyUI illustrations.
 
-- Field: `data.extensions.gmscreen_role`
-- Values: `"gm"`, `"npc"`, or absent (unset)
-- Absent/`"gm"` behave identically here (nothing is stripped). Only `"npc"`
-  causes GM/meta bracket tags to be removed from that card's turn.
+This README describes the current implementation. The extension manifest reports **0.6.7**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
 
-The same field is read by the skill-check extension, which suppresses its
-character sheet and GM instructions for `"npc"` cards. Either extension works
-standalone; they interoperate only by reading this one shared field. The flag
-is never written automatically — set it via the Card role control in the
-extension settings panel.
+## Installation and first use
 
-## NPC manager (context menu)
+1. Install this repository through SillyTavern's extension installer: <https://github.com/lucashald/npc-pov-memory>.
+2. Reload SillyTavern and open **Extensions → NPC POV Memory**.
+3. Open a character or group chat. In groups, choose the card to inspect in the **NPC** selector.
+4. Use your configured chat model. Memory updates and prompt injection are enabled by default.
+5. To seed private state, fill in **Secrets and hidden knowledge** and **Private goals**, then click **Save private notes**. Enable **Track appearance** to expose its editor.
+6. Click **Update selected NPC** to summarize new messages immediately, or let automatic updates run.
 
-Right-click any portrait in the group speaker bar (enable "Show group
-speaker buttons" in the extension settings) for the NPC manager menu:
+This is a browser extension loaded by SillyTavern, not a standalone Node application. There is no build or dependency-install step. It imports SillyTavern's generation, group, popup, reasoning, and media APIs directly. ComfyUI and a separate tagger server are optional; neither is needed for memory.
 
-- **Focus / clear focused speaker** — same as shift-click.
-- **Set portrait from chat image** — pick any image that has appeared in
-  the current chat (`extra.image` / `extra.image_swipes`); replaces the
-  character card's portrait everywhere after a confirm.
-- **Card role** — set `gmscreen_role` (Default / GM / NPC) per card, and
-  **Bulk roles (group)** to mark everyone (or everyone except the
-  right-clicked card) as NPC, or clear all roles.
-- **View memory summary** — popup with autobiography, relationship,
-  secrets, and goals.
-- **Forget memory** — relationship-only or everything, confirmed.
-- **Remove from group** / **Add character to group** — edit the current
-  group's members without the native panel; the add submenu has a filter.
-- **Rewrite history…** — per-message LLM rewrite over the last N messages
-  or the whole chat, filtered to AI/user/all messages. Leaving the
-  instruction empty removes places where the AI spoke or acted for your
-  persona. A snapshot is taken first; progress toast click cancels.
-- **Strip GM brackets from history** — persists what the NPC interceptor
-  does live: removes `[bracket]` meta tags, deleting tag-only messages.
-- **Undo last bulk change** — reverts the most recent rewrite/strip
-  (snapshot stack of 10).
+## How memory works
 
-Bulk operations edit both `mes` and the active swipe, save the chat, and
-refuse to apply if the chat changed while they were running.
+Each update asks the active chat model to revise these fields:
 
-## Appearance field
+| Field | Scope |
+| --- | --- |
+| Autobiography | The NPC's accumulated experiences across chats and personas |
+| Relationship | That NPC's history with the current user persona |
+| Secrets | Hidden knowledge, suspicions, and things the NPC conceals |
+| Goals | Active objectives, plans, and unresolved intentions |
+| Appearance | Optional current physical description, clothing, and visible condition |
 
-Off by default. Enable **Track appearance** in the extension settings to add a
-fifth stored field alongside autobiography, relationship, secrets, and goals.
+The updater receives existing memory and new non-system transcript messages. It is instructed to use only what the NPC witnessed, was told, or could infer. This is model guidance: the extension does not track physical presence or enforce who witnessed each message. Character-card descriptions are not explicitly included in the update prompt.
 
-- **Blank until you write it.** The updater is explicitly told never to invent
-  appearance details, so an undescribed character stays empty rather than
-  acquiring a hallucinated face that then becomes canon.
-- **Edit it by hand** in the settings panel, next to Secrets and Goals, and save
-  with the same button. Right-click a portrait and choose *View memory summary*
-  to read it.
-- **Maintained like the other fields.** Once populated, the updater revises it
-  from the transcript, preserving permanent features (species, build, face, eye
-  colour, permanent marks) unless the story explicitly changes them, and
-  rewording only what actually changed (clothing, injuries, dirt, exhaustion).
-- **Not injected by default.** Recent appearance changes are already visible in
-  the chat history, so injecting it usually wastes tokens. Turn on **Inject
-  appearance into prompts** when a change needs to survive falling out of
-  context.
+Automatic updates are considered after an AI character message renders, for the card identified as that message's speaker. **Update every** counts chat entries since that card's checkpoint, including user and other characters' entries; it does not mean that many replies by the selected NPC. Only one memory update runs at a time; overlapping attempts are skipped.
 
-The field is written as plain visual prose so an image generator can consume it
-directly. Turning tracking off leaves stored text untouched and removes
-appearance from the update call entirely.
+The update consumes unsummarized entries up to **Max messages**. Older backlog beyond that limit is skipped. **Update selected NPC** bypasses the interval but still uses the checkpoint and message cap; it does not rebuild all history. Empty or missing response fields preserve existing text, and complete fields may be recovered from truncated JSON.
 
-## Image generation (ComfyUI)
+| Setting | Default |
+| --- | --- |
+| Enable / automatic updates / inject memory | On |
+| Update every | 8 chat entries |
+| Max messages per update | 80 |
+| Max words | About 450 per field, requested from the model |
+| Response tokens | 2,500 |
+| Inject secrets / goals | On |
+| Track appearance / inject appearance | Off / off |
+| Group speaker buttons | Off |
 
-Off by default, behind **Enable image generation**. This is the raw-narration
-path, built to be compared against the tagger-based `async-comfy-images`
-extension: run one or the other, not both on auto at once.
+Autobiography and the current persona's relationship are included in injection by default. Secrets and goals have individual injection switches. Appearance injection requires both appearance switches. These notes are sent to the model with instructions to keep them private in the fiction; they are not a security boundary or encrypted storage.
 
-Instead of asking a tagger LLM to rewrite the message into a prompt, it sends
-Krea 2 the narration itself, prefixed by the stored **appearance** of whoever is
-in frame. Krea 2's encoder reads prose directly, and a tagger is no better at
-inventing framing or lighting the transcript never stated, so the extra hop only
-adds latency. What the tagger cannot supply is a description that stays stable
-across renders and changes only when the story changes it.
+### Storage and forgetting
 
-How a prompt is built:
+Memory lives on the character card at `data.extensions.npcPovMemory` (store version 2). Autobiography, secrets, goals, and appearance are shared across that card's chats. Relationships are keyed by a lowercased, ASCII-normalized persona **name**, not a unique persona ID: names such as `Alex!` and `Alex` share a key, and names containing no ASCII letters or digits fall back to `user`.
 
-1. GM/meta bracket tags are stripped, then dialogue is removed. Messages using
-   `*asterisks*` keep only those spans; otherwise quoted speech is dropped.
-2. Subjects are the right-clicked character plus any other group member named in
-   the remaining narration (exact whole-word match, which is why cards should use
-   single first names).
-3. Each subject's stored appearance is prepended. One subject uses its
-   description verbatim; several are name-prefixed. Characters with no stored
-   appearance contribute nothing.
-4. An optional style suffix is appended.
+Progress checkpoints are stored per chat. Extension settings live in `extension_settings["npc-pov-memory"]`.
 
-Renders go through SillyTavern's ComfyUI proxy and a **single-flight queue**, so
-overlapping requests wait rather than thrashing VRAM. Seeds default to one
-stable value per character, so the same card renders consistently; switch to
-random for variety. Finished images attach to the originating message, located
-by identity so a queued render still lands correctly after you have kept
-chatting.
+- **Forget relationship** removes only the current persona's relationship entry.
+- **Forget all** resets all extension memory on the selected card, including appearance and checkpoints.
+- Forgetting does not delete the transcript, so later updates can learn those events again.
+- The panel edits secrets, goals, and appearance directly; autobiography and relationship are displayed as summaries.
+- Turning appearance tracking off preserves stored appearance. Image generation can still use that stored text.
 
-Trigger it from **Generate image** in the portrait right-click menu, or turn on
-**Auto-generate after each character message**.
+Memory can travel with a card when its extension fields are retained. Review those fields before sharing cards. Debug logging currently prints memory model replies, image prompts, and appearance text to the browser console.
 
-### Tagger vs raw
+## Card roles and bracket filtering
 
-Image prompts default to a **tagger**: the scene (dialogue stripped) plus each
-in-frame character's stored appearance are sent to an LLM that returns one
-photographic description, choosing a single moment, framing, and light. Raw
-narration overwhelms Krea 2's encoder with beats and interiority; the tagger
-distills it. Unlike a generic tagger, this one is *given* the appearance, so
-identity stays fixed and only the moment varies.
+**Card role (gmscreen)** writes `data.extensions.gmscreen_role`, a shared field other extensions can read. No companion extension is required, and roles are not assigned automatically.
 
-Configure it under image settings:
+With **Strip GM/meta bracket tags for non-GM NPCs** enabled (the default):
 
-- **Prompt from** — Tagger LLM (default) or Raw scene (appearance + narration,
-  kept for comparison).
-- **Tagger uses** — a separate OpenAI-compatible endpoint (non-blocking, keeps
-  the chat responsive) or the main chat model (queues with chat).
-- Endpoint URL, model, and max tokens.
+| Card role | Filter outgoing transcript and memory-update input? |
+| --- | --- |
+| NPC (`npc`) | Yes |
+| GM / narrator (`gm`) | No |
+| Default / unset | Only if **Treat unmarked cards as NPCs** is enabled; off by default |
 
-If the tagger errors or returns nothing usable, it falls back to the raw scene
-rather than skipping the image.
+The filter removes whole-line and trailing square-bracket spans, including tag-only messages. For example, `She nods. [GM: hidden clue]` becomes `She nods.`. Mid-sentence brackets and Markdown links remain. It uses position rather than tag names, so ordinary trailing bracketed prose is removed too.
 
-#### How the tagger and appearance combine
+Live filtering modifies the transcript supplied to generation, not saved chat history. It does not remove hidden information written in ordinary prose or already stored in memory. The history-strip menu action below is a separate, persistent operation.
 
-The tagger is given only the character names and the scene, and it describes
-only the action: pose, expression, setting, light, and camera framing. It is
-told NOT to describe fixed appearance. The stored appearance field is then
-prepended to the tagger's output by the same composition step the raw path
-uses. So appearance is injected by the extension, never produced by the
-tagger, which means it cannot drift between renders no matter what the tagger
-does with the scene.
+## Group speaker bar and NPC manager
+
+Enable **Show group speaker buttons** in a group chat:
+
+- **Click a portrait:** request one reply from that member.
+- **Shift-click:** toggle focused speaker. Focus switches the group's activation strategy to Manual and arranges replies from that character after user messages.
+- **Clear focus:** apply the strategy selected in **When focus clears**: Pooled order (default), Natural order, or Manual. This does not restore a remembered previous strategy.
+- **Right-click:** open the NPC manager.
+
+The manager supports setting individual or bulk roles, viewing and forgetting memory, adding/removing group members, generating an image, and choosing a new card portrait from chat images. Portrait changes affect the card everywhere and require confirmation. The image picker reads `extra.media[]` and legacy image fields.
+
+Focus is held in memory, while the group's Manual strategy is saved. After reloading while focused, you may need to choose a speaker or change the group's strategy. These menus are exposed through the group bar; there is no equivalent manual image-generation button in the single-character settings panel.
+
+### History editing
+
+**Rewrite history…** rewrites each selected message with a separate model call. Choose the last N chat entries or the entire chat, then filter to AI, user, or all non-system messages. N is applied before the speaker filter. Blank instructions ask the model to remove places where the AI speaks, acts, or thinks for the user persona. Empty rewritten results delete messages.
+
+Clicking the progress toast cancels further work after the current call; completed rewrites are still applied. Individual failed calls are skipped. Text edits update `mes` and the active swipe, leaving alternate swipes untouched.
+
+**Strip GM brackets from history** applies the positional bracket filter to the whole current chat, including user and system messages, regardless of card role. It deletes tag-only messages and saves the result after confirmation.
+
+**Undo last bulk change** restores a whole-chat snapshot. Up to ten snapshots are kept in memory and lost on reload. Snapshots are scoped to their originating chat. Undo is blocked while a bulk operation runs or if the chat has changed since the operation, so it cannot overwrite another chat or discard newer messages, edits, or attachments. Export a chat before bulk editing it.
+
+## Optional ComfyUI images
+
+Both **Enable image generation (ComfyUI)** and automatic images default to off. To configure:
+
+1. Run ComfyUI at an address reachable from the SillyTavern server. The default is `http://127.0.0.1:8188`.
+2. Provide a ComfyUI API workflow in SillyTavern's user workflow storage (`comfyWorkflows`) and enter its filename. The configured default, `Krea2_Turbo.json`, is **not included in this repository**; supply it or select your own compatible workflow and install its required models/nodes.
+3. Enable images and optionally seed each card's appearance through **Track appearance → Save private notes**.
+4. Right-click a group portrait → **Generate image**, or enable **Auto-generate after each character message**. Automatic images also work in single-character chats.
+
+Manual generation uses the latest non-user, non-system message as the scene, even if another character wrote it; the clicked card is the primary subject. Automatic generation uses the triggering message and its speaker.
+
+### Prompt construction
+
+1. Remove square-bracket spans, Markdown links, and checkbox glyphs. This image-specific filter is broader than the NPC transcript filter.
+2. Remove paired quoted speech, asterisk markers, and selected scene-marker emoji. Words inside asterisks are kept. Malformed straight quotes preserve the words rather than guessing which spans are dialogue. Skip messages with no remaining narration.
+3. Select the primary subject plus group members whose full card names occur in the narration, using case-insensitive whole-word matching. Aliases, pronouns, and partial names are not resolved.
+4. By default, a **Tagger LLM** receives the names and cleaned narration and produces one photographic description. Stored appearance is not included in the explicit tagger prompt. **Raw scene** skips this call. Failed or empty tagger output falls back to raw narration.
+5. Prepend stored appearance descriptions and append the optional style suffix. Multiple nonempty descriptions receive name labels.
+
+Appearance preservation is an instruction to the memory updater, and the tagger is instructed not to invent fixed features. Neither those instructions nor a stable seed guarantee consistent generated identity.
+
+| Image setting | Default |
+| --- | --- |
+| Prompt from / Tagger uses | Tagger LLM / Main chat model |
+| Tagger max tokens | 1,000 |
+| Dimensions / steps | 832 × 1,216 / 8 |
+| Seed | Stable hash of the character's avatar filename, falling back to name |
+| Style suffix / custom tagger instructions | Empty / built-in instructions |
+
+**Separate endpoint** sends a browser request directly to an OpenAI-compatible chat-completions URL. Set your own full URL and model: the prefilled URL is a developer-specific private address, not a bundled service. The endpoint needs to permit the browser request, including CORS where applicable. This client has no API-key/header setting. Main-model tagging uses SillyTavern's quiet generation and can contend with chat generation.
+
+### Workflow contract and output
+
+The extension loads a workflow through `/api/sd/comfy/workflow` and submits it through `/api/sd/comfy/generate`. It replaces these **quoted, whole-value placeholders** in workflow JSON:
+
+```json
+{
+  "text": "%prompt%",
+  "seed": "%seed%",
+  "steps": "%steps%",
+  "width": "%width%",
+  "height": "%height%"
+}
+```
+
+This is a placeholder example, not a complete workflow. `%negative_prompt%` is also supported and replaced with an empty string. Embedded tokens such as `"prefix %prompt%"` are not substituted. Unused settings have no effect if their placeholders are absent.
+
+ComfyUI renders are serialized within this extension; tagger calls happen before the render queue. The queue does not coordinate with other extensions. Images are saved through SillyTavern and attached as `extra.media[]` gallery entries with the prompt as metadata. If the original message is no longer in the active chat when rendering finishes, the file is saved but not attached.
+
+## Troubleshooting and limitations
+
+- **Nothing new to summarize:** check that the extension is enabled, the selected card has new transcript entries, and another update is not running. Bracket-only entries may filter to nothing.
+- **Incomplete memory:** increase Response tokens or reduce Max words. Partial JSON recovery preserves older values for unfinished fields; it does not retry the missing fields.
+- **Images fail:** verify the workflow filename, required ComfyUI models/nodes, server URL, and browser console. A failed tagger falls back to raw text; a failed render does not.
+- **Disabling memory:** the main enable switch gates memory and NPC filtering. Images and group controls have separate switches and can remain active.
+- **Edited history:** stored memory and index checkpoints are not rebuilt when messages are edited, deleted, swiped, or rewritten. For substantial changes, review/reset affected memory; subsequent summarization still uses the message cap.
+- **Concurrent edits:** rewrites discard their results if the chat, message identities, text, or swipes change during generation. Memory updates allow new messages to arrive but checkpoint only the original transcript; changes to the source, persona, card, or stored notes discard the pending update. Bracket stripping also checks for changes while its confirmation dialog is open. Discarded memory updates can be retried with **Update selected NPC**.
+
+## Development
+
+Run the dependency-free helper tests with Node.js:
+
+```sh
+node --test
+```
+
+The current suite has 114 tests covering `gmscreen.js`, `imageprompt.js`, and the actual memory/bulk-operation orchestration with mocked SillyTavern services. Regression tests exercise cross-chat Undo, concurrent edits and swipes, checkpoint boundaries, and confirmation-time chat changes. Live SillyTavern events, server persistence, and ComfyUI/LLM transport still need integration testing.
+
+| File | Responsibility |
+| --- | --- |
+| `index.js` | Settings, card memory, injection, events, speaker bar, manager, image orchestration |
+| `gmscreen.js` | Roles, bracket filtering, JSON recovery, rewrite and image-collection helpers |
+| `imageprompt.js` | Scene cleanup, subjects, appearance composition, seeds, tagger prompts |
+| `tagger.js` | Main-model and direct-endpoint tagger clients |
+| `comfy.js` | Workflow substitution and serialized ComfyUI rendering |
+| `style.css` | Settings, group bar, and manager styling |
+| `sample-characters/` | Example character-card JSON files |
+
+Existing design notes may describe earlier behavior. The implementation and tests are the basis for this README; a live compatibility test is still needed for any particular SillyTavern build.

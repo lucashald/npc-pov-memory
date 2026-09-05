@@ -540,7 +540,8 @@ async function maybeUpdateMemory(characterId, { force = false } = {}) {
 
     const persona = getPersona();
     const chatKey = getChatKey(context);
-    const store = readStore(character);
+    const storedBefore = JSON.stringify(readStore(character));
+    const store = clone(readStore(character));
     const relationship = getRelationship(store, persona);
     const lastUpdatedIndex = getLastUpdatedIndex(store, relationship, chatKey);
     const interval = clampNumber(settings.updateInterval, 1, 1000, DEFAULT_SETTINGS.updateInterval);
@@ -556,6 +557,8 @@ async function maybeUpdateMemory(characterId, { force = false } = {}) {
         500,
         DEFAULT_SETTINGS.maxMessagesPerUpdate,
     );
+    const sourceState = captureChatState(context);
+    const lastIncludedIndex = chat.length - 1;
     const startIndex = Math.max(0, Math.max(lastUpdatedIndex + 1, chat.length - maxMessages));
     const messages = chat
         .slice(startIndex)
@@ -586,6 +589,14 @@ async function maybeUpdateMemory(characterId, { force = false } = {}) {
     try {
         isUpdating = true;
         const updated = await generateMemoryUpdate(systemPrompt, userPrompt);
+        const current = getContext();
+        if (!chatStateMatches(sourceState, current, { allowAppend: true })
+            || getCharacterById(characterId, current) !== character
+            || getPersona().key !== persona.key
+            || JSON.stringify(readStore(character)) !== storedBefore) {
+            console.warn("[NPC POV Memory] Memory source changed during generation; update discarded.");
+            return false;
+        }
         const updatedAt = nowIso();
 
         if (updated.autobiography) {
@@ -615,8 +626,8 @@ async function maybeUpdateMemory(characterId, { force = false } = {}) {
 
         store.autobiography.updatedAt = updatedAt;
         relationship.updatedAt = updatedAt;
-        store.autobiography.lastMessageIndexByChat[chatKey] = chat.length - 1;
-        relationship.lastMessageIndexByChat[chatKey] = chat.length - 1;
+        store.autobiography.lastMessageIndexByChat[chatKey] = lastIncludedIndex;
+        relationship.lastMessageIndexByChat[chatKey] = lastIncludedIndex;
 
         await writeStore(characterId, store);
         refreshSettingsPanel();
@@ -1946,30 +1957,72 @@ function showMemorySummary(characterId) {
 
 // ---- bulk engine: snapshots, undo, apply ----
 
+// Capture message identity and text/swipe state before asynchronous work.
+function messageRevision(message) {
+    return JSON.stringify([
+        message?.mes, message?.swipe_id, message?.swipes,
+        message?.name, message?.is_user, message?.is_system,
+        message?.original_avatar, message?.avatar,
+    ]);
+}
+
+function captureChatState(context = getContext()) {
+    return {
+        key: getChatKey(context),
+        chat: context.chat,
+        messages: context.chat.map(message => ({ message, revision: messageRevision(message) })),
+    };
+}
+
+function chatStateMatches(state, context = getContext(), { allowAppend = false } = {}) {
+    const chat = context.chat;
+    return getChatKey(context) === state.key && chat === state.chat
+        && (allowAppend ? chat.length >= state.messages.length : chat.length === state.messages.length)
+        && state.messages.every((entry, index) => chat[index] === entry.message
+            && messageRevision(chat[index]) === entry.revision);
+}
+
 function snapshotChatForUndo() {
     const context = getContext();
-    bulkSnapshots.push(clone(context.chat || []));
-    if (bulkSnapshots.length > BULK_SNAPSHOT_CAP) {
-        bulkSnapshots.shift();
-    }
+    return { chatKey: getChatKey(context), messages: clone(context.chat), after: null };
+}
+
+function currentUndoIndex() {
+    const key = getChatKey();
+    return bulkSnapshots.map(snapshot => snapshot.chatKey).lastIndexOf(key);
 }
 
 async function undoLastBulkChange() {
-    const snapshot = bulkSnapshots.pop();
-    if (!snapshot) {
-        toastr.info("No bulk change to undo.");
+    if (isBulkRunning) {
+        toastr.warning("Wait for the current bulk operation to finish.");
         return;
     }
+    const index = currentUndoIndex();
+    if (index === -1) {
+        toastr.info("No bulk change to undo in this chat.");
+        return;
+    }
+    const snapshot = bulkSnapshots[index];
     const context = getContext();
-    context.chat.length = 0;
-    for (const message of snapshot) {
-        context.chat.push(message);
+    if (JSON.stringify(context.chat) !== snapshot.after) {
+        toastr.warning("The chat changed after the bulk operation; Undo would discard newer changes.");
+        return;
     }
-    await context.saveChat();
-    if (typeof context.reloadCurrentChat === "function") {
-        await context.reloadCurrentChat();
+    isBulkRunning = true;
+    try {
+        context.chat.length = 0;
+        for (const message of clone(snapshot.messages)) {
+            context.chat.push(message);
+        }
+        bulkSnapshots.splice(index, 1);
+        await context.saveChat();
+        if (getChatKey() === snapshot.chatKey && typeof context.reloadCurrentChat === "function") {
+            await context.reloadCurrentChat();
+        }
+        toastr.success("Reverted the last bulk change.");
+    } finally {
+        isBulkRunning = false;
     }
-    toastr.success("Reverted the last bulk change.");
 }
 
 function writeMessageText(message, newText) {
@@ -1990,6 +2043,7 @@ async function applyBulkChanges(changes) {
     }
     const context = getContext();
     const chat = context.chat;
+    const snapshot = snapshotChatForUndo();
     const sorted = [...changes].sort((a, b) => b.index - a.index);
     let removed = 0;
 
@@ -2006,7 +2060,15 @@ async function applyBulkChanges(changes) {
         }
     }
 
+    snapshot.after = JSON.stringify(chat);
+    bulkSnapshots.push(snapshot);
+    if (bulkSnapshots.length > BULK_SNAPSHOT_CAP) {
+        bulkSnapshots.shift();
+    }
     await context.saveChat();
+    if (getChatKey() !== snapshot.chatKey || getContext().chat !== chat) {
+        return;
+    }
 
     if (removed > 0 && typeof context.reloadCurrentChat === "function") {
         await context.reloadCurrentChat();
@@ -2049,8 +2111,7 @@ async function runBulkRewrite({ scope, instruction }) {
     }
 
     const persona = getPersona();
-    const startLength = chat.length;
-    snapshotChatForUndo();
+    const sourceState = captureChatState(context);
     isBulkRunning = true;
     bulkCancelRequested = false;
 
@@ -2072,7 +2133,7 @@ async function runBulkRewrite({ scope, instruction }) {
         showProgress(0, indices.length);
         // Highest index first so planned indices survive any removals on apply.
         for (const index of [...indices].sort((a, b) => b - a)) {
-            if (bulkCancelRequested) {
+            if (bulkCancelRequested || !chatStateMatches(sourceState)) {
                 break;
             }
             const message = chat[index];
@@ -2106,7 +2167,7 @@ async function runBulkRewrite({ scope, instruction }) {
         // If the chat changed while we were generating (new messages, chat
         // switch), the planned indices are stale; applying them would corrupt
         // the wrong messages.
-        if (getContext().chat !== chat || chat.length !== startLength) {
+        if (!chatStateMatches(sourceState)) {
             toastr.error("The chat changed while rewriting; no edits were applied.", "Bulk rewrite");
             return;
         }
@@ -2187,7 +2248,12 @@ async function openRewriteDialog() {
 // ---- persisted bracket strip ----
 
 async function runPersistBracketStrip() {
+    if (isBulkRunning) {
+        toastr.warning("Wait for the current bulk operation to finish.");
+        return;
+    }
     const context = getContext();
+    const sourceState = captureChatState(context);
     const changes = planBracketStrip(context.chat || []);
     if (!changes.length) {
         toastr.info("No GM/meta bracket tags found in this chat.");
@@ -2205,8 +2271,10 @@ async function runPersistBracketStrip() {
         return;
     }
 
-    // Re-plan after the confirm dialog: the chat may have changed while it
-    // was open, and stale indices would hit the wrong messages.
+    if (isBulkRunning || !chatStateMatches(sourceState)) {
+        toastr.warning("The chat changed while confirming; no edits were applied.");
+        return;
+    }
     const freshChanges = planBracketStrip(getContext().chat || []);
     if (!freshChanges.length) {
         toastr.info("No GM/meta bracket tags found in this chat.");
@@ -2214,8 +2282,12 @@ async function runPersistBracketStrip() {
     }
     const freshRemoved = freshChanges.filter(change => change.remove).length;
 
-    snapshotChatForUndo();
-    await applyBulkChanges(freshChanges);
+    isBulkRunning = true;
+    try {
+        await applyBulkChanges(freshChanges);
+    } finally {
+        isBulkRunning = false;
+    }
     toastr.success(`Stripped brackets from ${freshChanges.length - freshRemoved} messages, removed ${freshRemoved}.`);
 }
 
@@ -2503,7 +2575,7 @@ function buildNpcMenuItems(characterId) {
         { label: "Add character to group", submenu: buildAddMemberSubmenu(rootItems) },
         { label: "Rewrite history…", disabled: isBulkRunning, action: () => openRewriteDialog() },
         { label: "Strip GM brackets from history", disabled: isBulkRunning, action: () => runPersistBracketStrip() },
-        { label: "Undo last bulk change", disabled: !bulkSnapshots.length, action: () => undoLastBulkChange() },
+        { label: "Undo last bulk change", disabled: isBulkRunning || currentUndoIndex() === -1, action: () => undoLastBulkChange() },
     ];
 }
 
