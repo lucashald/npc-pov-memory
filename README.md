@@ -2,7 +2,7 @@
 
 A SillyTavern extension that keeps character-card memory from an NPC's point of view, injects it into replies, and provides group speaker controls, history editing, and optional ComfyUI illustrations.
 
-This README describes the current implementation. The extension manifest reports **0.6.10**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
+This README describes the current implementation. The extension manifest reports **0.6.11**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
 
 ## Installation and first use
 
