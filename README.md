@@ -2,7 +2,7 @@
 
 A SillyTavern extension that keeps character-card memory from an NPC's point of view, injects it into replies, and provides group speaker controls, history editing, and optional ComfyUI illustrations.
 
-This README describes the current implementation. The extension manifest reports **0.6.13**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
+This README describes the current implementation. The extension manifest reports **0.6.14**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
 
 ## Installation and first use
 
@@ -134,7 +134,7 @@ Appearance preservation is an instruction to the memory updater, and the tagger 
 | Seed | Stable hash of the character's avatar filename, falling back to name |
 | Style suffix / custom tagger instructions | Empty / built-in instructions |
 
-**Separate endpoint** sends a browser request directly to an OpenAI-compatible chat-completions URL. Set your own full URL and model: the prefilled URL is a developer-specific private address, not a bundled service. The endpoint needs to permit the browser request, including CORS where applicable. This client has no API-key/header setting. Main-model tagging uses SillyTavern's quiet generation and can contend with chat generation.
+**Separate endpoint** sends a browser request directly to an OpenAI-compatible chat-completions URL. Enter your endpoint URL: a full `/chat/completions` URL or an API base such as `http://localhost:1234/v1` (a bare host uses `/v1`). The model dropdown automatically loads IDs from the corresponding `/models` endpoint when separate-endpoint tagging is active. Use **Refresh models** to reload the list, then select a model; **Server default** omits the model ID. Existing saved selections are retained even if discovery fails or the model is not listed. The prefilled URL is a developer-specific private address, not a bundled service. The endpoint needs to permit the browser request, including CORS where applicable. This client has no API-key/header setting. Main-model tagging uses SillyTavern's quiet generation and can contend with chat generation.
 
 ### Workflow contract and output
 
@@ -171,7 +171,7 @@ Run the dependency-free helper tests with Node.js:
 node --test
 ```
 
-The current suite has 117 tests covering `gmscreen.js`, `imageprompt.js`, and the actual memory/bulk-operation orchestration with mocked SillyTavern services. Regression tests exercise cross-chat Undo, concurrent edits and swipes, checkpoint boundaries, confirmation-time chat changes, and tool availability in single-character/group chats. Live SillyTavern events, server persistence, and ComfyUI/LLM transport still need integration testing.
+The current suite has 122 tests covering `gmscreen.js`, `imageprompt.js`, and the actual memory/bulk-operation orchestration with mocked SillyTavern services. Regression tests exercise cross-chat Undo, concurrent edits and swipes, checkpoint boundaries, confirmation-time chat changes, and tool availability in single-character/group chats. Live SillyTavern events, server persistence, and ComfyUI/LLM transport still need integration testing.
 
 | File | Responsibility |
 | --- | --- |
@@ -179,6 +179,7 @@ The current suite has 117 tests covering `gmscreen.js`, `imageprompt.js`, and th
 | `gmscreen.js` | Roles, bracket filtering, JSON recovery, rewrite and image-collection helpers |
 | `imageprompt.js` | Scene cleanup, subjects, appearance composition, seeds, tagger prompts |
 | `tagger.js` | Main-model and direct-endpoint tagger clients |
+| `tagger-endpoint.js` | Endpoint URL handling and model discovery |
 | `comfy.js` | Workflow substitution and serialized ComfyUI rendering |
 | `style.css` | Settings, group bar, and manager styling |
 | `sample-characters/` | Example character-card JSON files |

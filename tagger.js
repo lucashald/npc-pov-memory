@@ -11,6 +11,7 @@
 // transport and is easy to reason about.
 
 import { generateQuietPrompt } from "../../../../script.js";
+import { taggerEndpointUrls } from "./tagger-endpoint.js";
 
 /** Salvage tags from a reasoning-only reply (empty content, filled reasoning). */
 function pickContent(message) {
@@ -36,7 +37,7 @@ export async function runTagger({ source, url, model, maxTokens, temperature, sy
         throw new Error("No tagger endpoint URL is set.");
     }
 
-    const response = await fetch(url, {
+    const response = await fetch(taggerEndpointUrls(url).completions, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -23,6 +23,7 @@ import {
     stripNonVisual,
 } from "./imageprompt.js";
 import { runTagger } from "./tagger.js";
+import { fetchTaggerModels } from "./tagger-endpoint.js";
 import { DEFAULT_TAGGER_SYSTEM } from "./imageprompt.js";
 import { removeReasoningFromString } from "../../../reasoning.js";
 import { callGenericPopup, POPUP_TYPE, POPUP_RESULT } from "../../../popup.js";
@@ -898,14 +899,18 @@ function createSettingsPanel() {
                                         <option value="main">Main chat model (queues with chat)</option>
                                     </select>
                                 </label>
-                                <label>
+                                <label class="npc-pov-memory-endpoint-only">
                                     <span>Tagger endpoint</span>
                                     <input id="npc-pov-memory-tagger-url" class="text_pole" type="text">
                                 </label>
-                                <label>
+                                <label class="npc-pov-memory-endpoint-only">
                                     <span>Tagger model</span>
-                                    <input id="npc-pov-memory-tagger-model" class="text_pole" type="text">
+                                    <select id="npc-pov-memory-tagger-model" class="text_pole"></select>
                                 </label>
+                                <div class="npc-pov-memory-endpoint-only">
+                                    <button id="npc-pov-memory-tagger-refresh" type="button" class="menu_button">Refresh models</button>
+                                    <div id="npc-pov-memory-tagger-status" role="status" aria-live="polite"></div>
+                                </div>
                                 <label>
                                     <span>Tagger max tokens</span>
                                     <input id="npc-pov-memory-tagger-max" class="text_pole" type="number" min="64" max="8192">
@@ -1084,12 +1089,16 @@ function bindSettingsPanel() {
     $("#npc-pov-memory-tagger-source").on("change", function () {
         getSettings().taggerSource = $(this).val() === "main" ? "main" : "endpoint";
         saveSettings();
+        refreshSettingsPanel();
     });
 
     $("#npc-pov-memory-tagger-url").on("change", function () {
         getSettings().taggerUrl = String($(this).val() || "").trim();
         saveSettings();
+        refreshTaggerModelPicker();
     });
+
+    $("#npc-pov-memory-tagger-refresh").on("click", () => refreshTaggerModelPicker({ force: true }));
 
     $("#npc-pov-memory-tagger-model").on("change", function () {
         getSettings().taggerModel = String($(this).val() || "").trim();
@@ -1246,6 +1255,66 @@ function bindSettingsPanel() {
             await forgetAllForCurrent();
         }
     });
+}
+
+let taggerModelRequest = null;
+let taggerModelCache = { url: null, models: [], loading: false, status: "" };
+
+function renderTaggerModelPicker() {
+    const settings = getSettings();
+    const select = $("#npc-pov-memory-tagger-model").empty();
+    select.append($("<option>").val("").text("Server default"));
+    for (const id of taggerModelCache.models) {
+        select.append($("<option>").val(id).text(id));
+    }
+    if (settings.taggerModel && !taggerModelCache.models.includes(settings.taggerModel)) {
+        select.append($("<option>").val(settings.taggerModel).text(`${settings.taggerModel} (saved)`));
+    }
+    select.val(settings.taggerModel);
+    $("#npc-pov-memory-tagger-refresh").prop("disabled", taggerModelCache.loading);
+    $("#npc-pov-memory-tagger-status").text(taggerModelCache.status);
+}
+
+async function refreshTaggerModelPicker({ force = false } = {}) {
+    const settings = getSettings();
+    const active = settings.imagesEnabled && settings.imagePromptMode !== "raw" && settings.taggerSource === "endpoint";
+    $(".npc-pov-memory-endpoint-only").toggle(settings.taggerSource === "endpoint");
+    if (!active) {
+        taggerModelRequest?.abort();
+        taggerModelRequest = null;
+        taggerModelCache = { url: null, models: [], loading: false, status: "" };
+        renderTaggerModelPicker();
+        return;
+    }
+    const url = settings.taggerUrl.trim();
+    if (!force && taggerModelCache.url === url) {
+        renderTaggerModelPicker();
+        return;
+    }
+    taggerModelRequest?.abort();
+    const request = new AbortController();
+    taggerModelRequest = request;
+    taggerModelCache = { url, models: [], loading: Boolean(url), status: url ? "Loading models…" : "Enter an endpoint URL to load models." };
+    renderTaggerModelPicker();
+    if (!url) return;
+    const timeout = setTimeout(() => request.abort(), 10000);
+    try {
+        const models = await fetchTaggerModels(url, { signal: request.signal });
+        if (taggerModelRequest !== request) return;
+        taggerModelCache.models = models;
+        taggerModelCache.status = models.length ? `${models.length} model${models.length === 1 ? "" : "s"} available.` : "The endpoint returned no models.";
+    } catch (error) {
+        if (taggerModelRequest !== request) return;
+        taggerModelCache.status = request.signal.aborted
+            ? "Model request timed out. Check the endpoint and refresh."
+            : `Could not load models: ${error.message} Check the endpoint and browser access (CORS).`;
+    } finally {
+        clearTimeout(timeout);
+        if (taggerModelRequest === request) {
+            taggerModelCache.loading = false;
+            renderTaggerModelPicker();
+        }
+    }
 }
 
 function ensureGroupSpeakerBar() {
@@ -1637,7 +1706,7 @@ function refreshSettingsPanel() {
     $("#npc-pov-memory-prompt-mode").val(settings.imagePromptMode);
     $("#npc-pov-memory-tagger-source").val(settings.taggerSource);
     $("#npc-pov-memory-tagger-url").val(settings.taggerUrl);
-    $("#npc-pov-memory-tagger-model").val(settings.taggerModel);
+    refreshTaggerModelPicker();
     $("#npc-pov-memory-tagger-max").val(settings.taggerMaxTokens);
     // Show the effective instructions: the override, or the default when blank.
     if (!$("#npc-pov-memory-tagger-system").is(":focus")) {
