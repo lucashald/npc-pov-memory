@@ -2281,7 +2281,7 @@ async function openRewriteDialog() {
                 </label>
                 <label>
                     <span>N</span>
-                    <input id="npc-pov-rw-n" class="text_pole" type="number" min="1" max="500" value="10">
+                    <input id="npc-pov-rw-n" class="text_pole" type="number" min="1" max="500" value="1">
                 </label>
                 <label>
                     <span>Apply to</span>
@@ -2309,7 +2309,7 @@ async function openRewriteDialog() {
     const mode = String(content.find("#npc-pov-rw-scope").val() || "lastN");
     const scope = {
         mode,
-        n: clampNumber(content.find("#npc-pov-rw-n").val(), 1, 500, 10),
+        n: clampNumber(content.find("#npc-pov-rw-n").val(), 1, 500, 1),
         filter: String(content.find("#npc-pov-rw-filter").val() || "ai"),
     };
     const instruction = String(content.find("#npc-pov-rw-instruction").val() || "");
