@@ -590,7 +590,12 @@ async function maybeUpdateMemory(characterId, { force = false } = {}) {
 
     try {
         isUpdating = true;
-        const updated = await generateMemoryUpdate(systemPrompt, userPrompt);
+        let updated;
+        try {
+            updated = await generateMemoryUpdate(systemPrompt, userPrompt);
+        } catch (error) {
+            throw memoryUpdateError(error, "model request");
+        }
         const current = getContext();
         if (!chatStateMatches(sourceState, current, { allowAppend: true })
             || getCharacterById(characterId, current) !== character
@@ -631,12 +636,27 @@ async function maybeUpdateMemory(characterId, { force = false } = {}) {
         store.autobiography.lastMessageIndexByChat[chatKey] = lastIncludedIndex;
         relationship.lastMessageIndexByChat[chatKey] = lastIncludedIndex;
 
-        await writeStore(characterId, store);
+        try {
+            await writeStore(characterId, store);
+        } catch (error) {
+            throw memoryUpdateError(error, "saving the character card");
+        }
         refreshSettingsPanel();
         return true;
     } finally {
         isUpdating = false;
     }
+}
+
+function memoryUpdateError(error, stage) {
+    const detail = String(error?.message ?? error);
+    const isHtml = /<!doctype|<html|unexpected token\s+['"]?</i.test(detail);
+    const hint = isHtml
+        ? stage === "model request"
+            ? "The main SillyTavern model request encountered HTML instead of JSON. Check SillyTavern's server log for the failed request; memory generation did not complete."
+            : "The character-card save encountered HTML instead of JSON. The model request completed; check the character card's JSON data and SillyTavern's server log."
+        : detail;
+    return new Error(`NPC memory failed during ${stage}: ${hint}`, { cause: error });
 }
 
 function buildInjectedMemoryPrompt(character, store, persona) {
@@ -1873,6 +1893,7 @@ async function onCharacterMessageRendered(messageId) {
         }
     } catch (error) {
         console.error("[NPC POV Memory] Automatic update failed", error);
+        toastr.error(error.message || String(error), "NPC memory update failed");
     }
 }
 

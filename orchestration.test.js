@@ -224,3 +224,17 @@ test('No active character or an empty group exposes no tool targets',()=>{
     h.current.groups=[{id:'empty',members:[]}];
     assert.equal(h.box.getToolsCharacters().length,0);
 });
+
+test('Memory HTML error identifies generation and does not save memory',async()=>{
+    const h=harness();
+    h.box.generateMemoryUpdate=async()=>{throw new SyntaxError('Unexpected token \'<\', "<!DOCTYPE " is not valid JSON');};
+    await assert.rejects(h.box.maybeUpdateMemory(0,{force:true}),/failed during model request:.*HTML instead of JSON/);
+    assert.equal(h.writes.length,0);
+});
+
+test('Memory HTML error identifies card saving after successful generation',async()=>{
+    const h=harness();
+    h.box.generateMemoryUpdate=async()=>({autobiography:'summary'});
+    h.current.writeExtensionField=async()=>{throw new SyntaxError('Unexpected token \'<\', "<!DOCTYPE " is not valid JSON');};
+    await assert.rejects(h.box.maybeUpdateMemory(0,{force:true}),/failed during saving the character card:.*model request completed/);
+});

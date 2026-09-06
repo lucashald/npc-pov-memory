@@ -2,7 +2,7 @@
 
 A SillyTavern extension that keeps character-card memory from an NPC's point of view, injects it into replies, and provides group speaker controls, history editing, and optional ComfyUI illustrations.
 
-This README describes the current implementation. The extension manifest reports **0.6.15**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
+This README describes the current implementation. The extension manifest reports **0.6.16**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
 
 ## Installation and first use
 
@@ -162,6 +162,8 @@ ComfyUI renders are serialized within this extension; tagger calls happen before
 
 ## Troubleshooting and limitations
 
+Memory failures identify whether the error occurred during the model request or while saving the character card. HTML/JSON errors require inspecting the corresponding SillyTavern server response or card data; they are not treated as a successful memory update. Automatic failures also display an error notification.
+
 - **Nothing new to summarize:** check that the extension is enabled, the selected card has new transcript entries, and another update is not running. Bracket-only entries may filter to nothing.
 - **Incomplete memory:** increase Response tokens or reduce Max words. Partial JSON recovery preserves older values for unfinished fields; it does not retry the missing fields.
 - **Images fail:** verify the workflow filename, required ComfyUI models/nodes, server URL, and browser console. A failed tagger falls back to raw text; a failed render does not.
@@ -177,7 +179,7 @@ Run the dependency-free helper tests with Node.js:
 node --test
 ```
 
-The current suite has 129 tests covering `gmscreen.js`, `imageprompt.js`, and the actual memory/bulk-operation orchestration with mocked SillyTavern services. Regression tests exercise cross-chat Undo, concurrent edits and swipes, checkpoint boundaries, confirmation-time chat changes, and tool availability in single-character/group chats. Live SillyTavern events, server persistence, and ComfyUI/LLM transport still need integration testing.
+The current suite has 131 tests covering `gmscreen.js`, `imageprompt.js`, and the actual memory/bulk-operation orchestration with mocked SillyTavern services. Regression tests exercise cross-chat Undo, concurrent edits and swipes, checkpoint boundaries, confirmation-time chat changes, and tool availability in single-character/group chats. Live SillyTavern events, server persistence, and ComfyUI/LLM transport still need integration testing.
 
 | File | Responsibility |
 | --- | --- |
