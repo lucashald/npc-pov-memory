@@ -198,6 +198,16 @@ export const DEFAULT_TAGGER_SYSTEM = [
     "sentences. Describe only what a camera would capture. Omit dialogue,",
     "personality, thoughts, intentions, sounds, smells, and abstract or",
     "metaphorical qualities. Never use Danbooru tags such as 1girl or masterpiece.",
+    "Choose one visible moment. State each person's position and orientation clearly,",
+    "including who is beside, facing, or touching whom. Keep bodies at consistent",
+    "scale and describe a simple, physically coherent pose instead of a sequence",
+    "of movements. Do not turn figurative language into literal anatomy or objects.",
+    "For scenes with several people, default to an eye-level medium or wider shot",
+    "with their faces and upper bodies visible, unless the scene explicitly calls",
+    "for a close-up. Avoid framing one person as an isolated, oversized body part.",
+    "Preserve stated setting and action. Do not invent props, architectural details,",
+    "or elaborate lighting effects. Use plain, concrete visual language; omit",
+    "uncertain details rather than filling space with poetic descriptions.",
 ].join("\n");
 
 /**

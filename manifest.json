@@ -7,7 +7,7 @@
   "css": "style.css",
   "generate_interceptor": "npcPovMemoryGenerateInterceptor",
   "author": "lucashald",
-  "version": "0.6.16",
+  "version": "0.6.17",
   "homePage": "https://github.com/lucashald/npc-pov-memory",
   "auto_update": true
 }

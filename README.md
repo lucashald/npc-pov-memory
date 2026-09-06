@@ -2,7 +2,7 @@
 
 A SillyTavern extension that keeps character-card memory from an NPC's point of view, injects it into replies, and provides group speaker controls, history editing, and optional ComfyUI illustrations.
 
-This README describes the current implementation. The extension manifest reports **0.6.16**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
+This README describes the current implementation. The extension manifest reports **0.6.17**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
 
 ## Installation and first use
 
@@ -120,7 +120,7 @@ Manual generation uses the latest non-user, non-system message as the scene, eve
 
 When images are enabled, **ComfyUI model** loads the model list from your configured ComfyUI server. **Refresh ComfyUI models** reloads it. Loading errors appear below the dropdown and do not clear the saved selection. Discovery uses [SillyTavern's ComfyUI proxy](https://github.com/SillyTavern/SillyTavern/blob/release/src/endpoints/stable-diffusion.js), so the browser does not need direct access to ComfyUI.
 
-**Use workflow model** is the default and leaves the workflow unchanged. Selecting a model overrides a single loader's `ckpt_name` or `unet_name` input in the render request; the saved workflow file is not modified. For multiple loaders or custom loader inputs, place `"%model%"` on the intended input in the workflow. Ambiguous overrides fail with an explanation instead of replacing several models. Select a model compatible with your workflow's architecture, encoders, and other nodes.
+**Use workflow model** is the default and leaves the workflow unchanged. Selecting a model overrides a single loader's `ckpt_name` or `unet_name` input in the render request; the saved workflow file is not modified. For multiple loaders or custom loader inputs, place `"%model%"` on the intended input in the workflow. Ambiguous overrides fail with an explanation instead of replacing several models. Select a model compatible with your workflow's architecture, encoders, and other nodes. Recognizable Anima/Krea 2 cross-family overrides are rejected; this is not a universal architecture validator.
 
 ### Prompt construction
 
@@ -129,6 +129,8 @@ When images are enabled, **ComfyUI model** loads the model list from your config
 3. Select the primary subject plus group members whose full card names occur in the narration, using case-insensitive whole-word matching. Aliases, pronouns, and partial names are not resolved.
 4. By default, a **Tagger LLM** receives the names and cleaned narration and produces one photographic description. Stored appearance is not included in the explicit tagger prompt. **Raw scene** skips this call. Failed or empty tagger output falls back to raw narration.
 5. Prepend stored appearance descriptions and append the optional style suffix. Multiple nonempty descriptions receive name labels.
+
+The built-in tagger asks for concrete subject placement, coherent poses, and readable framing for scenes with several people. It discourages invented props and figurative anatomy. It retains natural-language descriptions, consistent with [Krea's prompting guide](https://github.com/krea-ai/krea-2/blob/main/docs/prompting.md). A custom tagger instruction overrides these defaults.
 
 Appearance preservation is an instruction to the memory updater, and the tagger is instructed not to invent fixed features. Neither those instructions nor a stable seed guarantee consistent generated identity.
 
@@ -179,7 +181,7 @@ Run the dependency-free helper tests with Node.js:
 node --test
 ```
 
-The current suite has 131 tests covering `gmscreen.js`, `imageprompt.js`, and the actual memory/bulk-operation orchestration with mocked SillyTavern services. Regression tests exercise cross-chat Undo, concurrent edits and swipes, checkpoint boundaries, confirmation-time chat changes, and tool availability in single-character/group chats. Live SillyTavern events, server persistence, and ComfyUI/LLM transport still need integration testing.
+The current suite has 133 tests covering `gmscreen.js`, `imageprompt.js`, and the actual memory/bulk-operation orchestration with mocked SillyTavern services. Regression tests exercise cross-chat Undo, concurrent edits and swipes, checkpoint boundaries, confirmation-time chat changes, and tool availability in single-character/group chats. Live SillyTavern events, server persistence, and ComfyUI/LLM transport still need integration testing.
 
 | File | Responsibility |
 | --- | --- |

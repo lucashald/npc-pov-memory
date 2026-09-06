@@ -48,3 +48,15 @@ test('Render submits the selected model with substituted prompt',async()=>{
     await box.renderImage({comfyUrl:'http://comfy:8188',workflow:'scene.json',model:'chosen.safetensors',prompt:'Scene',seed:1,steps:8,width:512,height:512});
     assert.equal(JSON.parse(submitted.prompt).prompt['1'].inputs.unet_name,'chosen.safetensors');
 });
+
+test('Rejects Anima overrides of Krea workflows and Krea overrides of Anima',()=>{
+    const krea=JSON.stringify({'1':{inputs:{unet_name:'analogMadnessKrea2Turbo_v20.safetensors'}}});
+    const anima=JSON.stringify({'1':{inputs:{unet_name:'anima_turboV10.safetensors'}}});
+    assert.throws(()=>applyComfyModel(krea,'anima_turboV10.safetensors'),/Cannot use a Anima model/);
+    assert.throws(()=>applyComfyModel(anima,'krea2_turbo.safetensors'),/Cannot use a Krea 2 model/);
+    assert.equal(JSON.parse(applyComfyModel(krea,'krea2_turbo.safetensors'))['1'].inputs.unet_name,'krea2_turbo.safetensors');
+});
+test('Krea encoder prevents Anima selection even with a model placeholder',()=>{
+    const input=JSON.stringify({'1':{inputs:{unet_name:'%model%'}},'2':{class_type:'CLIPLoader',inputs:{type:'krea2'}}});
+    assert.throws(()=>applyComfyModel(input,'anima_turbo.safetensors'),/Krea 2 workflow/);
+});
