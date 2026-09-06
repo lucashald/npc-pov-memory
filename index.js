@@ -225,7 +225,7 @@ function getChatKey(context = getContext()) {
 }
 
 function getCharacterById(characterId, context = getContext()) {
-    const id = Number(characterId);
+    const id = characterId === null || characterId === undefined || characterId === "" ? NaN : Number(characterId);
     if (!Number.isInteger(id) || id < 0) {
         return null;
     }
@@ -278,7 +278,7 @@ function getActiveCharacterId(context = getContext()) {
     }
 
     const rawId = context.characterId;
-    const id = Number(rawId);
+    const id = rawId === null || rawId === undefined || rawId === "" ? NaN : Number(rawId);
     if (Number.isInteger(id) && getCharacterById(id, context)) {
         return id;
     }
@@ -969,6 +969,7 @@ function createSettingsPanel() {
                                 <input id="npc-pov-memory-response-length" class="text_pole" type="number" min="100" max="4000">
                             </label>
                         </div>
+                        <button id="npc-pov-memory-open-tools" type="button" class="menu_button" aria-haspopup="true">Open NPC tools</button>
                         <div class="npc-pov-memory-current">
                             <div class="npc-pov-memory-current-target"></div>
                             <div class="npc-pov-memory-preview"></div>
@@ -1006,6 +1007,9 @@ function createSettingsPanel() {
 }
 
 function bindSettingsPanel() {
+    $("#npc-pov-memory-open-tools").on("click", function () {
+        openNpcToolsFrom(this, getSettingsCharacterId());
+    });
     $("#npc-pov-memory-enabled").on("change", function () {
         getSettings().enabled = Boolean($(this).prop("checked"));
         saveSettings();
@@ -1265,6 +1269,24 @@ function ensureGroupSpeakerBar() {
         $("#send_form").prepend(bar);
     }
 
+    const tools = $(
+        '<div id="npc-pov-memory-tools-bar" role="group" aria-label="NPC tools">'
+        + '<img class="npc-pov-memory-tools-avatar" alt="">'
+        + '<span class="npc-pov-memory-tools-name"></span>'
+        + '<select class="text_pole npc-pov-memory-tools-select" aria-label="Character for NPC tools"></select>'
+        + '<button type="button" class="menu_button npc-pov-memory-tools-open" aria-haspopup="true">NPC tools <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>'
+        + '</div>',
+    );
+    bar.before(tools);
+    tools.on("change", ".npc-pov-memory-tools-select", function () {
+        closeNpcContextMenu();
+        selectedSettingsCharacterId = Number($(this).val());
+        refreshSettingsPanel();
+    });
+    tools.on("click", ".npc-pov-memory-tools-open", function () {
+        openNpcToolsFrom(this, Number($(this).attr("data-character-id")));
+    });
+
     bar.on("click", ".npc-pov-memory-speaker-trigger", async function (event) {
         const characterId = Number($(this).attr("data-character-id"));
         if (Number.isInteger(characterId)) {
@@ -1284,6 +1306,46 @@ function ensureGroupSpeakerBar() {
             openNpcContextMenu(characterId, event.clientX, event.clientY);
         }
     });
+}
+
+function getToolsCharacters(context = getContext()) {
+    if (context.groupId) {
+        return getGroupMemberCharacters(context);
+    }
+    const character = getCharacterById(context.characterId, context);
+    return character ? [{ id: Number(context.characterId), character }] : [];
+}
+
+function refreshNpcToolsBar() {
+    const context = getContext();
+    const members = getToolsCharacters(context);
+    const selected = getSettingsCharacterId(context);
+    const member = members.find(entry => entry.id === selected) || members[0];
+    const bar = $("#npc-pov-memory-tools-bar");
+    bar.toggle(Boolean(member));
+    $("#npc-pov-memory-open-tools").prop("disabled", !member);
+    if (!member) {
+        return;
+    }
+    const name = member.character.name || "NPC";
+    bar.find(".npc-pov-memory-tools-avatar").attr("src", getCharacterAvatarUrl(member.character));
+    bar.find(".npc-pov-memory-tools-name").text(name).toggle(!context.groupId);
+    const select = bar.find(".npc-pov-memory-tools-select").empty();
+    for (const entry of members) {
+        select.append($("<option>").val(entry.id).text(entry.character.name || "NPC"));
+    }
+    select.val(member.id).toggle(Boolean(context.groupId));
+    bar.find(".npc-pov-memory-tools-open")
+        .attr("data-character-id", member.id)
+        .attr("aria-label", `NPC tools for ${name}`);
+}
+
+function openNpcToolsFrom(element, characterId) {
+    if (!getToolsCharacters().some(entry => entry.id === characterId)) {
+        return;
+    }
+    const rect = element.getBoundingClientRect();
+    openNpcContextMenu(characterId, rect.left, rect.bottom + 4);
 }
 
 function getGroupActivationStrategyOptions(selectedValue) {
@@ -1377,6 +1439,7 @@ function getCharacterAvatarUrl(character) {
 
 function refreshGroupSpeakerBar() {
     ensureGroupSpeakerBar();
+    refreshNpcToolsBar();
 
     const settings = getSettings();
     const context = getContext();
@@ -1542,7 +1605,7 @@ function refreshCharacterSelector(context, selectedCharacterId) {
 
     selector.val(String(selectedCharacterId));
     selector.prop("disabled", optionIds.length <= 1);
-    $(".npc-pov-memory-character-picker").toggle(optionIds.length > 1);
+    $(".npc-pov-memory-character-picker").show();
 }
 
 function refreshSettingsPanel() {
@@ -1684,6 +1747,7 @@ function registerEvents() {
     }
 
     source.on(events.CHAT_CHANGED, () => {
+        closeNpcContextMenu();
         lastDraftCharacterId = null;
         selectedSettingsCharacterId = null;
         if (getContext().groupId) {
@@ -1725,6 +1789,7 @@ function registerEvents() {
 
     if (events.GROUP_UPDATED) {
         source.on(events.GROUP_UPDATED, () => {
+            closeNpcContextMenu();
             refreshSettingsPanel();
             refreshGroupSpeakerBar();
         });
@@ -2369,7 +2434,7 @@ function renderMenuItems(menu, items) {
             continue;
         }
 
-        const row = $("<div>", { class: "npc-pov-memory-ctx-item" });
+        const row = $("<button>", { type: "button", class: "npc-pov-memory-ctx-item", disabled: Boolean(item.disabled) });
         if (item.disabled) {
             row.addClass("npc-pov-memory-ctx-disabled");
         }
@@ -2503,6 +2568,7 @@ function buildNpcMenuItems(characterId) {
     return [
         { header: character?.name || "NPC" },
         {
+            groupOnly: true,
             label: isFocused ? "Clear focused speaker" : "Focus this speaker",
             action: () => toggleFocusedSpeaker(Number(characterId)),
         },
@@ -2526,6 +2592,7 @@ function buildNpcMenuItems(characterId) {
             ],
         },
         {
+            groupOnly: true,
             label: "Bulk roles (group)",
             submenu: () => [
                 { label: "← Back", submenu: rootItems },
@@ -2539,6 +2606,15 @@ function buildNpcMenuItems(characterId) {
             ],
         },
         { label: "View memory summary", action: () => showMemorySummary(characterId) },
+        {
+            label: "Update memory now",
+            disabled: !getSettings().enabled || isUpdating,
+            action: async () => {
+                const updated = await maybeUpdateMemory(characterId, { force: true });
+                setInjectedMemory();
+                toastr[updated ? "success" : "info"](updated ? "NPC memory updated." : "No memory update was applied.");
+            },
+        },
         {
             label: "Forget memory",
             submenu: () => [
@@ -2570,13 +2646,13 @@ function buildNpcMenuItems(characterId) {
                 },
             ],
         },
-        { label: "Remove from group", action: () => removeCharacterFromCurrentGroup(characterId) },
+        { groupOnly: true, label: "Remove from group", action: () => removeCharacterFromCurrentGroup(characterId) },
         { separator: true },
-        { label: "Add character to group", submenu: buildAddMemberSubmenu(rootItems) },
+        { groupOnly: true, label: "Add character to group", submenu: buildAddMemberSubmenu(rootItems) },
         { label: "Rewrite history…", disabled: isBulkRunning, action: () => openRewriteDialog() },
         { label: "Strip GM brackets from history", disabled: isBulkRunning, action: () => runPersistBracketStrip() },
         { label: "Undo last bulk change", disabled: isBulkRunning || currentUndoIndex() === -1, action: () => undoLastBulkChange() },
-    ];
+    ].filter(item => !item.groupOnly || Boolean(getCurrentGroup(context)));
 }
 
 function openNpcContextMenu(characterId, x, y) {
@@ -2588,6 +2664,7 @@ function openNpcContextMenu(characterId, x, y) {
     $(document.body).append(menu);
 
     renderMenuItems(menu, buildNpcMenuItems(characterId));
+    menu.find("button:not(:disabled)").first().trigger("focus");
 
     $(document).on("mousedown.npcPovCtx", function (event) {
         if (!menu.get(0).contains(event.target)) {

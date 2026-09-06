@@ -190,3 +190,37 @@ test('Rejected memory update leaves existing relationships untouched',async()=>{
     await running;
     assert.deepEqual(h.card.data.extensions.npcPovMemory.relationships,{});
 });
+
+test('Single-character tools expose shared actions and hide group-only actions',()=>{
+    const h=harness();
+    const labels=Array.from(h.box.buildNpcMenuItems(0),item=>item.label);
+    for(const label of ['Generate image','Set portrait from chat image','View memory summary','Update memory now','Rewrite history…','Strip GM brackets from history','Undo last bulk change']) {
+        assert.ok(labels.includes(label),label);
+    }
+    for(const label of ['Focus this speaker','Bulk roles (group)','Add character to group','Remove from group']) {
+        assert.ok(!labels.includes(label),label);
+    }
+    assert.equal(h.box.getToolsCharacters()[0].id,0);
+});
+
+test('Group tools retain group actions and include disabled members for management',()=>{
+    const h=harness();
+    h.current.groupId='group';
+    h.current.groups=[{id:'group',members:['npc.png'],disabled_members:['npc.png']}];
+    const labels=Array.from(h.box.buildNpcMenuItems(0),item=>item.label);
+    for(const label of ['Focus this speaker','Bulk roles (group)','Add character to group','Remove from group'])assert.ok(labels.includes(label),label);
+    assert.equal(h.box.getToolsCharacters()[0].disabled,true);
+});
+
+test('No active character or an empty group exposes no tool targets',()=>{
+    const h=harness();
+    for(const id of [null,undefined,'']) {
+        h.current.characterId=id;
+        assert.equal(h.box.getToolsCharacters().length,0);
+        assert.equal(h.box.getCharacterById(id),null);
+    }
+    h.current.characterId=0;
+    h.current.groupId='empty';
+    h.current.groups=[{id:'empty',members:[]}];
+    assert.equal(h.box.getToolsCharacters().length,0);
+});

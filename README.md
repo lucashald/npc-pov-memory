@@ -2,13 +2,13 @@
 
 A SillyTavern extension that keeps character-card memory from an NPC's point of view, injects it into replies, and provides group speaker controls, history editing, and optional ComfyUI illustrations.
 
-This README describes the current implementation. The extension manifest reports **0.6.7**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
+This README describes the current implementation. The extension manifest reports **0.6.8**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
 
 ## Installation and first use
 
 1. Install this repository through SillyTavern's extension installer: <https://github.com/lucashald/npc-pov-memory>.
 2. Reload SillyTavern and open **Extensions → NPC POV Memory**.
-3. Open a character or group chat. In groups, choose the card to inspect in the **NPC** selector.
+3. Open a character or group chat. A portrait and **NPC tools** button appear above the message box. In groups, use the adjacent character selector to choose the card to manage.
 4. Use your configured chat model. Memory updates and prompt injection are enabled by default.
 5. To seed private state, fill in **Secrets and hidden knowledge** and **Private goals**, then click **Save private notes**. Enable **Track appearance** to expose its editor.
 6. Click **Update selected NPC** to summarize new messages immediately, or let automatic updates run.
@@ -76,7 +76,13 @@ The filter removes whole-line and trailing square-bracket spans, including tag-o
 
 Live filtering modifies the transcript supplied to generation, not saved chat history. It does not remove hidden information written in ordinary prose or already stored in memory. The history-strip menu action below is a separate, persistent operation.
 
-## Group speaker bar and NPC manager
+## NPC tools in any chat
+
+The **NPC tools** button above the message box opens the manager with a normal click or tap. It is visible in both single-character and group chats, independently of **Show group speaker buttons**. In groups, select a character beside the button; in a single-character chat, the current character is selected automatically. You can also use **Open NPC tools** in the extension settings.
+
+The menu provides image generation, portrait selection, card roles, memory summaries and updates, forgetting memory, and history editing. Focus, membership, and bulk group roles appear only in group chats. The card-role selector in settings is also available for single-character chats. The toolbar hides when there is no active character or the current group is empty.
+
+### Optional group speaker bar
 
 Enable **Show group speaker buttons** in a group chat:
 
@@ -87,7 +93,7 @@ Enable **Show group speaker buttons** in a group chat:
 
 The manager supports setting individual or bulk roles, viewing and forgetting memory, adding/removing group members, generating an image, and choosing a new card portrait from chat images. Portrait changes affect the card everywhere and require confirmation. The image picker reads `extra.media[]` and legacy image fields.
 
-Focus is held in memory, while the group's Manual strategy is saved. After reloading while focused, you may need to choose a speaker or change the group's strategy. These menus are exposed through the group bar; there is no equivalent manual image-generation button in the single-character settings panel.
+Focus is held in memory, while the group's Manual strategy is saved. After reloading while focused, you may need to choose a speaker or change the group's strategy. The optional portrait row retains its right-click shortcut; the always-visible **NPC tools** button provides the same manager without requiring a right-click.
 
 ### History editing
 
@@ -106,9 +112,9 @@ Both **Enable image generation (ComfyUI)** and automatic images default to off. 
 1. Run ComfyUI at an address reachable from the SillyTavern server. The default is `http://127.0.0.1:8188`.
 2. Provide a ComfyUI API workflow in SillyTavern's user workflow storage (`comfyWorkflows`) and enter its filename. The configured default, `Krea2_Turbo.json`, is **not included in this repository**; supply it or select your own compatible workflow and install its required models/nodes.
 3. Enable images and optionally seed each card's appearance through **Track appearance → Save private notes**.
-4. Right-click a group portrait → **Generate image**, or enable **Auto-generate after each character message**. Automatic images also work in single-character chats.
+4. Click **NPC tools → Generate image** in either chat type, or enable **Auto-generate after each character message**. Right-clicking a group speaker portrait remains an alternative shortcut.
 
-Manual generation uses the latest non-user, non-system message as the scene, even if another character wrote it; the clicked card is the primary subject. Automatic generation uses the triggering message and its speaker.
+Manual generation uses the latest non-user, non-system message as the scene, even if another character wrote it; the selected card is the primary subject. Automatic generation uses the triggering message and its speaker.
 
 ### Prompt construction
 
@@ -165,7 +171,7 @@ Run the dependency-free helper tests with Node.js:
 node --test
 ```
 
-The current suite has 114 tests covering `gmscreen.js`, `imageprompt.js`, and the actual memory/bulk-operation orchestration with mocked SillyTavern services. Regression tests exercise cross-chat Undo, concurrent edits and swipes, checkpoint boundaries, and confirmation-time chat changes. Live SillyTavern events, server persistence, and ComfyUI/LLM transport still need integration testing.
+The current suite has 117 tests covering `gmscreen.js`, `imageprompt.js`, and the actual memory/bulk-operation orchestration with mocked SillyTavern services. Regression tests exercise cross-chat Undo, concurrent edits and swipes, checkpoint boundaries, confirmation-time chat changes, and tool availability in single-character/group chats. Live SillyTavern events, server persistence, and ComfyUI/LLM transport still need integration testing.
 
 | File | Responsibility |
 | --- | --- |
