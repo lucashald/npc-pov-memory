@@ -7,23 +7,30 @@
 
 #npc-pov-memory-speaker-bar .npc-pov-memory-speaker-list {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
-    overflow-x: auto;
+    overflow-x: hidden;
     overflow-y: hidden;
     scrollbar-width: thin;
 }
 
 #npc-pov-memory-speaker-bar .npc-pov-memory-speaker-item {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
     flex: 0 0 auto;
+    max-width: 100%;
 }
 
 #npc-pov-memory-speaker-bar .npc-pov-memory-speaker-trigger {
     display: flex;
     align-items: center;
     gap: 6px;
-    height: 34px;
-    max-width: 160px;
+    min-height: 34px;
+    height: auto;
+    min-width: 0;
+    max-width: 240px;
     box-sizing: border-box;
     padding: 3px 8px 3px 4px;
     border: 1px solid var(--SmartThemeBorderColor);
@@ -57,9 +64,20 @@
 
 #npc-pov-memory-speaker-bar .npc-pov-memory-speaker-trigger span {
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: left;
+    line-height: 1.35;
+}
+
+#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-tools {
+    flex: 0 0 30px;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 6px;
+    background: var(--black30a);
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font: inherit;
 }
 
 #npc-pov-memory-settings .npc-pov-memory-body {
@@ -153,9 +171,6 @@
         grid-template-columns: 1fr;
     }
 
-    #npc-pov-memory-speaker-bar .npc-pov-memory-speaker-trigger {
-        max-width: 120px;
-    }
 }
 
 /* Thin horizontal scrollbar for the portrait row. The default Chrome/Windows
@@ -410,6 +425,14 @@
     flex: 0 0 auto;
     min-height: 36px;
     margin: 0;
+}
+
+#npc-pov-memory-tools-bar .npc-pov-memory-tools-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    text-align: left;
 }
 
 #npc-pov-memory-ctx button.npc-pov-memory-ctx-item {

@@ -1309,6 +1309,11 @@ function ensureGroupSpeakerBar() {
             openNpcContextMenu(characterId, event.clientX, event.clientY);
         }
     });
+    bar.on("click contextmenu", ".npc-pov-memory-speaker-tools", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openNpcToolsFrom(this, Number($(this).attr("data-character-id")));
+    });
 }
 
 function getToolsCharacters(context = getContext()) {
@@ -1325,7 +1330,8 @@ function refreshNpcToolsBar() {
     const selected = getSettingsCharacterId(context);
     const member = members.find(entry => entry.id === selected) || members[0];
     const bar = $("#npc-pov-memory-tools-bar");
-    bar.toggle(Boolean(member));
+    const hasSpeakerBar = Boolean(context.groupId && getSettings().showGroupSpeakerButtons && members.length);
+    bar.toggle(Boolean(member) && !hasSpeakerBar);
     $("#npc-pov-memory-open-tools").prop("disabled", !member);
     if (!member) {
         return;
@@ -1495,7 +1501,15 @@ function refreshGroupSpeakerBar() {
         }));
         button.append($("<span>").text(name));
 
-        list.append($("<div>", { class: "npc-pov-memory-speaker-item" }).append(button));
+        const toolsButton = $("<button>", {
+            type: "button",
+            class: "npc-pov-memory-speaker-tools",
+            "data-character-id": String(member.id),
+            "aria-label": `NPC tools for ${name}`,
+            "aria-haspopup": "true",
+            title: `NPC tools for ${name}`,
+        }).text("⋯");
+        list.append($("<div>", { class: "npc-pov-memory-speaker-item" }).append(button, toolsButton));
     }
 
     bar.toggle(Boolean(list.children().length));
