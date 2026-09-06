@@ -2,7 +2,7 @@
 
 A SillyTavern extension that keeps character-card memory from an NPC's point of view, injects it into replies, and provides group speaker controls, history editing, and optional ComfyUI illustrations.
 
-This README describes the current implementation. The extension manifest reports **0.6.8**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
+This README describes the current implementation. The extension manifest reports **0.6.9**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
 
 ## Installation and first use
 
@@ -78,7 +78,7 @@ Live filtering modifies the transcript supplied to generation, not saved chat hi
 
 ## NPC tools in any chat
 
-The **NPC tools** button above the message box opens the manager with a normal click or tap. It is visible in both single-character and group chats, independently of **Show group speaker buttons**. In groups, select a character beside the button; in a single-character chat, the current character is selected automatically. You can also use **Open NPC tools** in the extension settings.
+The portrait and **NPC tools** button above the message box both open the manager with a click, tap, or right-click. Both are keyboard-accessible buttons. It is visible in both single-character and group chats, independently of **Show group speaker buttons**. In groups, select a character beside the button; in a single-character chat, the current character is selected automatically. You can also use **Open NPC tools** in the extension settings.
 
 The menu provides image generation, portrait selection, card roles, memory summaries and updates, forgetting memory, and history editing. Focus, membership, and bulk group roles appear only in group chats. The card-role selector in settings is also available for single-character chats. The toolbar hides when there is no active character or the current group is empty.
 

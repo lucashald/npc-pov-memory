@@ -1271,8 +1271,9 @@ function ensureGroupSpeakerBar() {
 
     const tools = $(
         '<div id="npc-pov-memory-tools-bar" role="group" aria-label="NPC tools">'
+        + '<button type="button" class="npc-pov-memory-tools-character" aria-haspopup="true">'
         + '<img class="npc-pov-memory-tools-avatar" alt="">'
-        + '<span class="npc-pov-memory-tools-name"></span>'
+        + '<span class="npc-pov-memory-tools-name"></span></button>'
         + '<select class="text_pole npc-pov-memory-tools-select" aria-label="Character for NPC tools"></select>'
         + '<button type="button" class="menu_button npc-pov-memory-tools-open" aria-haspopup="true">NPC tools <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>'
         + '</div>',
@@ -1283,7 +1284,9 @@ function ensureGroupSpeakerBar() {
         selectedSettingsCharacterId = Number($(this).val());
         refreshSettingsPanel();
     });
-    tools.on("click", ".npc-pov-memory-tools-open", function () {
+    tools.on("click contextmenu", ".npc-pov-memory-tools-open, .npc-pov-memory-tools-character", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
         openNpcToolsFrom(this, Number($(this).attr("data-character-id")));
     });
 
@@ -1338,6 +1341,10 @@ function refreshNpcToolsBar() {
     bar.find(".npc-pov-memory-tools-open")
         .attr("data-character-id", member.id)
         .attr("aria-label", `NPC tools for ${name}`);
+    bar.find(".npc-pov-memory-tools-character")
+        .attr("data-character-id", member.id)
+        .attr("aria-label", `Open ${name}'s character menu`)
+        .attr("title", `Open ${name}'s character menu`);
 }
 
 function openNpcToolsFrom(element, characterId) {

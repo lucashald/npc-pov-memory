@@ -366,6 +366,27 @@
     flex: 0 0 auto;
 }
 
+#npc-pov-memory-tools-bar .npc-pov-memory-tools-character {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    max-width: 50%;
+    min-height: 36px;
+    padding: 2px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+#npc-pov-memory-tools-bar .npc-pov-memory-tools-character:hover {
+    border-color: var(--SmartThemeBorderColor);
+    background: var(--white20a);
+}
+
 #npc-pov-memory-tools-bar .npc-pov-memory-tools-name,
 #npc-pov-memory-tools-bar .npc-pov-memory-tools-select {
     flex: 1 1 0;
