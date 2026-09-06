@@ -12,7 +12,7 @@ import {
 import { MEDIA_DISPLAY, MEDIA_SOURCE, MEDIA_TYPE } from "../../../constants.js";
 import { saveBase64AsFile } from "../../../utils.js";
 import { humanizedDateTime } from "../../../RossAscends-mods.js";
-import { enqueueRender, getQueueDepth, renderImage } from "./comfy.js";
+import { enqueueRender, getQueueDepth, renderImage, fetchComfyModels } from "./comfy.js";
 import {
     buildTaggerPrompt,
     cleanTaggerOutput,
@@ -67,6 +67,7 @@ const DEFAULT_SETTINGS = {
     imagesAuto: false,
     imageComfyUrl: "http://127.0.0.1:8188",
     imageWorkflow: "Krea2_Turbo.json",
+    imageModel: "",
     imageSteps: 8,
     imageWidth: 832,
     imageHeight: 1216,
@@ -927,8 +928,15 @@ function createSettingsPanel() {
                             </label>
                             <label>
                                 <span>Workflow file</span>
-                                <input id="npc-pov-memory-image-workflow" class="text_pole" type="text">
-                            </label>
+                                    <input id="npc-pov-memory-image-workflow" class="text_pole" type="text">
+                                </label>
+                                <label>
+                                    <span>ComfyUI model</span>
+                                    <select id="npc-pov-memory-image-model" class="text_pole"></select>
+                                </label>
+                                <button id="npc-pov-memory-image-model-refresh" type="button" class="menu_button">Refresh ComfyUI models</button>
+                                <div id="npc-pov-memory-image-model-status" role="status" aria-live="polite"></div>
+                                <small>Choose a model compatible with your workflow. Use workflow model keeps its existing model.</small>
                             <label>
                                 <span>Seed</span>
                                 <select id="npc-pov-memory-image-seed-mode" class="text_pole">
@@ -1126,7 +1134,14 @@ function bindSettingsPanel() {
     $("#npc-pov-memory-image-url").on("change", function () {
         getSettings().imageComfyUrl = String($(this).val() || "").trim();
         saveSettings();
+        refreshComfyModelPicker();
     });
+
+    $("#npc-pov-memory-image-model").on("change", function () {
+        getSettings().imageModel = String($(this).val() || "");
+        saveSettings();
+    });
+    $("#npc-pov-memory-image-model-refresh").on("click", () => refreshComfyModelPicker({ force: true }));
 
     $("#npc-pov-memory-image-workflow").on("change", function () {
         getSettings().imageWorkflow = String($(this).val() || "").trim();
@@ -1258,6 +1273,62 @@ function bindSettingsPanel() {
 }
 
 let taggerModelRequest = null;
+let comfyModelRequest = null;
+let comfyModelCache = { url: null, models: [], loading: false, status: "" };
+
+function renderComfyModelPicker() {
+    const selected = getSettings().imageModel;
+    const select = $("#npc-pov-memory-image-model").empty();
+    select.append($("<option>").val("").text("Use workflow model"));
+    for (const model of comfyModelCache.models) {
+        select.append($("<option>").val(model.value).text(model.text));
+    }
+    if (selected && !comfyModelCache.models.some(model => model.value === selected)) {
+        select.append($("<option>").val(selected).text(`${selected} (saved)`));
+    }
+    select.val(selected);
+    $("#npc-pov-memory-image-model-refresh").prop("disabled", comfyModelCache.loading);
+    $("#npc-pov-memory-image-model-status").text(comfyModelCache.status);
+}
+
+async function refreshComfyModelPicker({ force = false } = {}) {
+    const settings = getSettings();
+    if (!settings.imagesEnabled) {
+        comfyModelRequest?.abort();
+        comfyModelRequest = null;
+        comfyModelCache = { url: null, models: [], loading: false, status: "" };
+        renderComfyModelPicker();
+        return;
+    }
+    const url = settings.imageComfyUrl.trim();
+    if (!force && comfyModelCache.url === url) {
+        renderComfyModelPicker();
+        return;
+    }
+    comfyModelRequest?.abort();
+    const request = new AbortController();
+    comfyModelRequest = request;
+    comfyModelCache = { url, models: [], loading: Boolean(url), status: url ? "Loading ComfyUI models…" : "Enter a ComfyUI URL to load models." };
+    renderComfyModelPicker();
+    if (!url) return;
+    const timeout = setTimeout(() => request.abort(), 10000);
+    try {
+        const models = await fetchComfyModels(url, { signal: request.signal });
+        if (comfyModelRequest !== request) return;
+        comfyModelCache.models = models;
+        comfyModelCache.status = models.length ? `${models.length} models available.` : "ComfyUI returned no models.";
+    } catch (error) {
+        if (comfyModelRequest !== request) return;
+        comfyModelCache.status = request.signal.aborted ? "Model request timed out. Check ComfyUI and refresh." : `Could not load models: ${error.message}`;
+    } finally {
+        clearTimeout(timeout);
+        if (comfyModelRequest === request) {
+            comfyModelCache.loading = false;
+            renderComfyModelPicker();
+        }
+    }
+}
+
 let taggerModelCache = { url: null, models: [], loading: false, status: "" };
 
 function renderTaggerModelPicker() {
@@ -1715,6 +1786,7 @@ function refreshSettingsPanel() {
     $(".npc-pov-memory-tagger-settings").toggle(settings.imagePromptMode !== "raw");
     $("#npc-pov-memory-image-url").val(settings.imageComfyUrl);
     $("#npc-pov-memory-image-workflow").val(settings.imageWorkflow);
+    refreshComfyModelPicker();
     $("#npc-pov-memory-image-seed-mode").val(settings.imageSeedMode);
     $("#npc-pov-memory-image-width").val(settings.imageWidth);
     $("#npc-pov-memory-image-height").val(settings.imageHeight);
@@ -2971,6 +3043,7 @@ async function generateImageFor(characterId, { messageIndex = null, silent = fal
         const result = await enqueueRender(() => renderImage({
             comfyUrl: settings.imageComfyUrl,
             workflow: settings.imageWorkflow,
+            model: settings.imageModel,
             prompt,
             seed,
             steps: clampNumber(settings.imageSteps, 1, 60, DEFAULT_SETTINGS.imageSteps),

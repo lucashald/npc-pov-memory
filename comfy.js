@@ -9,6 +9,21 @@
 // concurrency here makes every job slower rather than finishing any sooner.
 
 import { getRequestHeaders } from "../../../../script.js";
+import { applyComfyModel } from "./comfy-model.js";
+
+export async function fetchComfyModels(url, { signal } = {}) {
+    const response = await fetch("/api/sd/comfy/models", {
+        method: "POST",
+        headers: getRequestHeaders(),
+        body: JSON.stringify({ url }),
+        signal,
+    });
+    if (!response.ok) throw new Error(`ComfyUI model list returned HTTP ${response.status}.`);
+    const models = await response.json();
+    if (!Array.isArray(models)) throw new Error("Invalid ComfyUI model list.");
+    return models.filter(item => typeof item?.value === "string" && item.value)
+        .map(item => ({ value: item.value, text: item.text || item.value }));
+}
 
 let queueTail = Promise.resolve();
 let queueDepth = 0;
@@ -75,15 +90,15 @@ export function applyWorkflowSubstitutions(workflowText, values) {
  * Render one image. Resolves to { format, data } where data is base64.
  * Callers should wrap this in enqueueRender().
  */
-export async function renderImage({ comfyUrl, workflow, prompt, seed, steps, width, height }) {
-    const workflowText = applyWorkflowSubstitutions(await loadWorkflow(workflow), {
+export async function renderImage({ comfyUrl, workflow, model = "", prompt, seed, steps, width, height }) {
+    const workflowText = applyComfyModel(applyWorkflowSubstitutions(await loadWorkflow(workflow), {
         prompt,
         negative_prompt: "",
         seed,
         steps,
         width,
         height,
-    });
+    }), model);
 
     // The proxy forwards `prompt` to ComfyUI verbatim, so it has to be the
     // complete request body: the workflow wrapped in a "prompt" key.

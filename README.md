@@ -2,7 +2,7 @@
 
 A SillyTavern extension that keeps character-card memory from an NPC's point of view, injects it into replies, and provides group speaker controls, history editing, and optional ComfyUI illustrations.
 
-This README describes the current implementation. The extension manifest reports **0.6.14**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
+This README describes the current implementation. The extension manifest reports **0.6.15**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
 
 ## Installation and first use
 
@@ -116,6 +116,12 @@ Both **Enable image generation (ComfyUI)** and automatic images default to off. 
 
 Manual generation uses the latest non-user, non-system message as the scene, even if another character wrote it; the selected card is the primary subject. Automatic generation uses the triggering message and its speaker.
 
+### ComfyUI model selection
+
+When images are enabled, **ComfyUI model** loads the model list from your configured ComfyUI server. **Refresh ComfyUI models** reloads it. Loading errors appear below the dropdown and do not clear the saved selection. Discovery uses [SillyTavern's ComfyUI proxy](https://github.com/SillyTavern/SillyTavern/blob/release/src/endpoints/stable-diffusion.js), so the browser does not need direct access to ComfyUI.
+
+**Use workflow model** is the default and leaves the workflow unchanged. Selecting a model overrides a single loader's `ckpt_name` or `unet_name` input in the render request; the saved workflow file is not modified. For multiple loaders or custom loader inputs, place `"%model%"` on the intended input in the workflow. Ambiguous overrides fail with an explanation instead of replacing several models. Select a model compatible with your workflow's architecture, encoders, and other nodes.
+
 ### Prompt construction
 
 1. Remove square-bracket spans, Markdown links, and checkbox glyphs. This image-specific filter is broader than the NPC transcript filter.
@@ -171,7 +177,7 @@ Run the dependency-free helper tests with Node.js:
 node --test
 ```
 
-The current suite has 122 tests covering `gmscreen.js`, `imageprompt.js`, and the actual memory/bulk-operation orchestration with mocked SillyTavern services. Regression tests exercise cross-chat Undo, concurrent edits and swipes, checkpoint boundaries, confirmation-time chat changes, and tool availability in single-character/group chats. Live SillyTavern events, server persistence, and ComfyUI/LLM transport still need integration testing.
+The current suite has 129 tests covering `gmscreen.js`, `imageprompt.js`, and the actual memory/bulk-operation orchestration with mocked SillyTavern services. Regression tests exercise cross-chat Undo, concurrent edits and swipes, checkpoint boundaries, confirmation-time chat changes, and tool availability in single-character/group chats. Live SillyTavern events, server persistence, and ComfyUI/LLM transport still need integration testing.
 
 | File | Responsibility |
 | --- | --- |
@@ -180,7 +186,8 @@ The current suite has 122 tests covering `gmscreen.js`, `imageprompt.js`, and th
 | `imageprompt.js` | Scene cleanup, subjects, appearance composition, seeds, tagger prompts |
 | `tagger.js` | Main-model and direct-endpoint tagger clients |
 | `tagger-endpoint.js` | Endpoint URL handling and model discovery |
-| `comfy.js` | Workflow substitution and serialized ComfyUI rendering |
+| `comfy.js` | Model discovery, workflow substitution, and serialized ComfyUI rendering |
+| `comfy-model.js` | Model override application to workflow requests |
 | `style.css` | Settings, group bar, and manager styling |
 | `sample-characters/` | Example character-card JSON files |
 
