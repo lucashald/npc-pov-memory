@@ -70,16 +70,6 @@
     line-height: 1.35;
 }
 
-#npc-pov-memory-speaker-bar .npc-pov-memory-speaker-tools {
-    flex: 0 0 30px;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 6px;
-    background: var(--black30a);
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    font: inherit;
-}
-
 #npc-pov-memory-settings .npc-pov-memory-body {
     display: flex;
     flex-direction: column;

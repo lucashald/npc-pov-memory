@@ -2,7 +2,7 @@
 
 A SillyTavern extension that keeps character-card memory from an NPC's point of view, injects it into replies, and provides group speaker controls, history editing, and optional ComfyUI illustrations.
 
-This README describes the current implementation. The extension manifest reports **0.6.12**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
+This README describes the current implementation. The extension manifest reports **0.6.13**; `package.json` still reports `0.1.0`. No minimum compatible SillyTavern version is declared or verified.
 
 ## Installation and first use
 
@@ -78,7 +78,7 @@ Live filtering modifies the transcript supplied to generation, not saved chat hi
 
 ## NPC tools in any chat
 
-The portrait and **NPC tools** button above the message box both open the manager with a click, tap, or right-click. Both are keyboard-accessible buttons. It is visible in single-character chats and in groups with speaker buttons turned off. When **Show group speaker buttons** is on, one wrapping character list replaces the toolbar, with a **⋯** tools button beside each character. In groups, select a character beside the button; in a single-character chat, the current character is selected automatically. You can also use **Open NPC tools** in the extension settings.
+The portrait and **NPC tools** button above the message box both open the manager with a click, tap, or right-click. Both are keyboard-accessible buttons. It is visible in single-character chats and in groups with speaker buttons turned off. When **Show group speaker buttons** is on, one wrapping character list replaces the toolbar, with right-click menus on the character buttons. In groups, select a character beside the button; in a single-character chat, the current character is selected automatically. You can also use **Open NPC tools** in the extension settings.
 
 The menu provides image generation, portrait selection, card roles, memory summaries and updates, forgetting memory, and history editing. Focus, membership, and bulk group roles appear only in group chats. The card-role selector in settings is also available for single-character chats. The toolbar hides when there is no active character or the current group is empty.
 
@@ -93,7 +93,7 @@ Enable **Show group speaker buttons** in a group chat:
 
 The manager supports setting individual or bulk roles, viewing and forgetting memory, adding/removing group members, generating an image, and choosing a new card portrait from chat images. Portrait changes affect the card everywhere and require confirmation. The image picker reads `extra.media[]` and legacy image fields.
 
-Focus is held in memory, while the group's Manual strategy is saved. After reloading while focused, you may need to choose a speaker or change the group's strategy. The optional portrait row retains its right-click shortcut; each character also has a **⋯** button to open the manager without requiring a right-click. Full names wrap, and the list flows into additional rows rather than scrolling horizontally.
+Focus is held in memory, while the group's Manual strategy is saved. After reloading while focused, you may need to choose a speaker or change the group's strategy. Right-click a character in the optional portrait row to open its manager. Full names wrap, and the list flows into additional rows rather than scrolling horizontally.
 
 ### History editing
 

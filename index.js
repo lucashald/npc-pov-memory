@@ -1309,11 +1309,6 @@ function ensureGroupSpeakerBar() {
             openNpcContextMenu(characterId, event.clientX, event.clientY);
         }
     });
-    bar.on("click contextmenu", ".npc-pov-memory-speaker-tools", function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        openNpcToolsFrom(this, Number($(this).attr("data-character-id")));
-    });
 }
 
 function getToolsCharacters(context = getContext()) {
@@ -1501,15 +1496,7 @@ function refreshGroupSpeakerBar() {
         }));
         button.append($("<span>").text(name));
 
-        const toolsButton = $("<button>", {
-            type: "button",
-            class: "npc-pov-memory-speaker-tools",
-            "data-character-id": String(member.id),
-            "aria-label": `NPC tools for ${name}`,
-            "aria-haspopup": "true",
-            title: `NPC tools for ${name}`,
-        }).text("⋯");
-        list.append($("<div>", { class: "npc-pov-memory-speaker-item" }).append(button, toolsButton));
+        list.append($("<div>", { class: "npc-pov-memory-speaker-item" }).append(button));
     }
 
     bar.toggle(Boolean(list.children().length));
